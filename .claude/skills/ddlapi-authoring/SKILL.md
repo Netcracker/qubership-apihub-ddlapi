@@ -140,6 +140,37 @@ Registry keys are normalised qualified names: `"schema.table"`,
   and `SourceRange` from `positions.ts` is private. Never let `@pgsql/types`
   or `pgsql-parser` types appear in an exported signature.
 
+## Reading scalars from the AST — protobuf zero-omission
+
+`pgsql-parser` hands back libpg_query's protobuf as plain JSON, and protobuf
+**omits any scalar field equal to its zero value**. An integer `0`, a boolean
+`false`, and an empty string never appear — only the wrapper object survives:
+
+- `DEFAULT 0` → `A_Const.ival = {}` (the inner `ival: 0` is gone)
+- `DEFAULT false` → `A_Const.boolval = {}`
+- `timestamp(0)` → the typmod node is `A_Const { ival: {} }`
+
+So a truthiness check or a `?.['ival'] ?? ''` fallback silently turns a real
+`0` into `''`/`undefined`. The wrapper's *presence* already proves the value's
+type, so distinguish "wrapper absent" (field not set) from "wrapper present,
+inner omitted" (value **is** the zero) and supply the zero yourself:
+
+```typescript
+// integer literal — nodeToExpr (astHelpers.ts)
+if (c['ival']) return literal(String((c['ival'] as Record<string, unknown>)['ival'] ?? 0))
+
+// integer scalar — typeMapper.ival / createTable.constIval
+if (!c || !('ival' in c)) return undefined          // not an integer const
+const iv = (c['ival'] as Record<string, unknown>)['ival']
+return typeof iv === 'number' ? iv : 0               // inner omitted ⇒ 0
+```
+
+The same trap covers `boolval` (omitted ⇒ `false`). `fval` is the exception —
+it is stored as a non-empty string even for `0.0`, so it is never omitted.
+Reading a boolean as `node.flag && { flag: true }` is already correct: an
+omitted `false` *should* mean absent. The bug bites only when a zero is itself
+meaningful — a `0`/`false` default, `timestamp(0)` precision, `START WITH 0`.
+
 ## Error contract
 
 Non-fatal issues are reported through `onError` with a machine-readable `kind`
