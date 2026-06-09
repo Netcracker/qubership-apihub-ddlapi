@@ -1,17 +1,33 @@
 import { defineConfig } from 'vite'
 import dts from 'vite-plugin-dts'
 import { resolve } from 'path'
+import { builtinModules } from 'module'
+import pkg from './package.json'
+
+// Externalise runtime dependencies and Node built-ins instead of bundling them.
+// pgsql-parser pulls in libpg-query, whose loader reads `libpg-query.wasm` from
+// its own package directory via `readFileSync(__dirname + '/libpg-query.wasm')`.
+// Bundling it into this dist breaks that lookup (the .wasm never lands next to
+// our output), which is why the parser failed under Node. Keeping these external
+// lets the consumer's Node resolve pgsql-parser from node_modules, where the WASM
+// sits beside the loader, producing a Node-safe build.
+const externalPackages = [...Object.keys(pkg.dependencies ?? {})]
+const nodeBuiltins = [...builtinModules, ...builtinModules.map((m) => `node:${m}`)]
+const isExternal = (id: string): boolean =>
+  nodeBuiltins.includes(id) ||
+  externalPackages.some((p) => id === p || id.startsWith(`${p}/`))
 
 export default defineConfig({
   build: {
+    target: 'node24',
     lib: {
       entry: resolve(__dirname, 'src/index.ts'),
-      name: 'QupershipApihubDbSchema',
+      name: 'QupershipApihubDdlApi',
       fileName: (format) => format === 'es' ? 'index.js' : 'index.cjs',
       formats: ['es', 'cjs'],
     },
     rollupOptions: {
-      external: [],
+      external: isExternal,
     },
     sourcemap: true,
   },
