@@ -28,6 +28,14 @@ export default defineConfig({
     },
     rollupOptions: {
       external: isExternal,
+      output: {
+        // Emit `require`-based dynamic imports in the CJS bundle instead of a
+        // native `import()`. pgParser.ts lazily `import('pgsql-parser')`; a real
+        // `import()` works in production Node but throws under a CommonJS VM
+        // (e.g. Jest without --experimental-vm-modules). pgsql-parser ships a CJS
+        // entry, so require-based interop is safe and keeps CJS consumers working.
+        dynamicImportInCjs: false,
+      },
     },
     sourcemap: true,
   },
