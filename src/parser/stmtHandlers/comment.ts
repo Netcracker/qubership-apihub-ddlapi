@@ -127,6 +127,23 @@ export function handleComment(
       break
     }
 
+    case 'OBJECT_SCHEMA': {
+      // object is a bare String node holding the schema name (not a List).
+      const schemaName = strVal(stmt.object as Node | undefined)
+      if (!schemaName) return
+      const schema = acc.getSchema(schemaName)
+      if (!schema) {
+        onError({ kind: DdlErrorKind.UnresolvedReference, target: schemaName, message: `COMMENT ON SCHEMA: unknown schema '${schemaName}'`, ...(range && { range }) })
+        return
+      }
+      if (commentText !== undefined) {
+        setAttr(schema, makeComment(commentText))
+      } else {
+        clearAttr(schema, AttrKind.Comment)
+      }
+      break
+    }
+
     case 'OBJECT_TABCONSTRAINT': {
       // parts: [schema?, tableName, constraintName]
       // pgsql-parser: List items = [tableName String, constraintName String]
