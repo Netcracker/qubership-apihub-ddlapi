@@ -19,17 +19,20 @@ import type { DdlNonFatalError } from '../buildFromDdl'
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 function constIval(node: Node): number | undefined {
+  // pgsql-parser serialises protobuf, which omits a zero-valued `ival`: the
+  // integer 0 (e.g. START WITH 0) arrives with the inner field dropped. The
+  // wrapper's presence already proves an integer node, so a missing inner ⇒ 0.
   // A_Const form — used in column defaults, typmods, etc.
   const c = (node as Record<string, unknown>)['A_Const'] as Record<string, unknown> | undefined
-  if (c) {
-    const iv = (c['ival'] as Record<string, unknown> | undefined)?.['ival']
-    if (typeof iv === 'number') return iv
+  if (c && 'ival' in c) {
+    const iv = (c['ival'] as Record<string, unknown>)['ival']
+    return typeof iv === 'number' ? iv : 0
   }
   // Integer form — used in DefElem args (e.g. sequence options START WITH, INCREMENT BY)
   const intNode = (node as Record<string, unknown>)['Integer'] as Record<string, unknown> | undefined
   if (intNode) {
     const iv = intNode['ival']
-    if (typeof iv === 'number') return iv
+    return typeof iv === 'number' ? iv : 0
   }
   return undefined
 }

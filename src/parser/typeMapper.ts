@@ -11,9 +11,12 @@ import {
 
 function ival(node: Node): number | undefined {
   const c = (node as Record<string, unknown>)['A_Const'] as Record<string, unknown> | undefined
-  if (!c) return undefined
-  const iv = (c['ival'] as Record<string, unknown> | undefined)?.['ival']
-  return typeof iv === 'number' ? iv : undefined
+  if (!c || !('ival' in c)) return undefined
+  // pgsql-parser serialises protobuf, which omits the zero-valued inner `ival`:
+  // a typmod of 0 (e.g. timestamp(0), numeric(p,0)) arrives as `ival: {}`. The
+  // wrapper's presence already proves an integer const, so a missing inner ⇒ 0.
+  const iv = (c['ival'] as Record<string, unknown>)['ival']
+  return typeof iv === 'number' ? iv : 0
 }
 
 function typmod(typmods: Node[] | undefined, i: number): number | undefined {

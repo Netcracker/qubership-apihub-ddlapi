@@ -50,10 +50,14 @@ export function stmtRangeOf(rawStmt: RawStmt): SourceRange | undefined {
 export function nodeToExpr(node: Node): Expr {
   const c = (node as Record<string, unknown>)['A_Const'] as Record<string, unknown> | undefined
   if (c) {
-    if (c['ival']) return literal(String((c['ival'] as Record<string, unknown>)['ival'] ?? ''))
+    // pgsql-parser serialises protobuf, which omits zero-valued scalar fields:
+    // DEFAULT 0 arrives as `ival: {}` and DEFAULT false as `boolval: {}` (the
+    // inner field is dropped). Fall back to the protobuf default — 0 / false —
+    // not '', so zero literals round-trip correctly.
+    if (c['ival']) return literal(String((c['ival'] as Record<string, unknown>)['ival'] ?? 0))
     if (c['sval']) return literal(deparseSync(node as Record<string, unknown>))
     if (c['fval']) return literal(String((c['fval'] as Record<string, unknown>)['fval'] ?? ''))
-    if (c['boolval']) return literal(String((c['boolval'] as Record<string, unknown>)['boolval'] ?? ''))
+    if (c['boolval']) return literal(String((c['boolval'] as Record<string, unknown>)['boolval'] ?? false))
   }
   return rawExpr(deparseSync(node as Record<string, unknown>))
 }
