@@ -75,6 +75,17 @@ type identity, so the string is it). Two distinct dialect attrs that share a
 `kind` string would collide — give every `Unknown*` attr a unique, stable
 `kind`.
 
+**Escape-hatch attr fields use descriptive names, not Atlas single letters.**
+The PG attrs are emitted as `Unknown*` object literals with no interface, so
+their fields are never type-checked. They deliberately use descriptive names —
+`Partition.type`, `IndexType.type`, `IndexPredicate.predicate`,
+`IndexNullsDistinct.value` — instead of the Atlas Go single letters (`T`, `P`,
+`V`) that the core model carries with `/* Atlas Go: … */` comments. This is an
+intentional divergence for consumer readability; do **not** restore the
+single-letter spellings to match the Go source. Because there is no interface,
+`tsc` cannot catch drift — keep the parser emission sites, the api-unifier
+dialect rules, and the `ddlapi-using` field table in sync by hand.
+
 ## Factories are pure and omit absent fields
 
 Factory functions in `factories.ts` do no validation and never wire the object
