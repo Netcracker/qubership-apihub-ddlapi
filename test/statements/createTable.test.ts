@@ -130,7 +130,7 @@ describe('createTable', () => {
       expect(uqIdx).toBeDefined()
       const nd = uqIdx!.attrs!.find(a => a.kind === PgAttrKind.IndexNullsDistinct)
       expect(nd).toBeDefined()
-      expect((nd as unknown as { V: boolean }).V).toBe(false)
+      expect((nd as unknown as { value: boolean }).value).toBe(false)
     })
   })
 
@@ -253,9 +253,9 @@ describe('createTable', () => {
     test('partition-range: stores Partition attr', async () => {
       const realm = await buildFromDdl(loadSql('create-table/partition-range.sql'))
       const table = realm.schemas[0]!.tables![0]!
-      const part = table.attrs!.find(a => a.kind === PgAttrKind.Partition) as { T: string; parts: unknown[] } | undefined
+      const part = table.attrs!.find(a => a.kind === PgAttrKind.Partition) as { type: string; parts: unknown[] } | undefined
       expect(part).toBeDefined()
-      expect(part!.T).toBe('RANGE')
+      expect(part!.type).toBe('RANGE')
       expect(part!.parts).toHaveLength(1)
     })
 

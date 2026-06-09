@@ -75,13 +75,13 @@ these escape-hatch kinds:
 | `kind` | Where it appears | Carries |
 |--------|------------------|---------|
 | `'Identity'` | column `attrs` | `generation`, `seqStart?`, `seqIncrement?` |
-| `'Partition'` | table `attrs` | `T` (RANGE/LIST/HASH), `parts` |
+| `'Partition'` | table `attrs` | `type` (RANGE/LIST/HASH), `parts` |
 | `'Inherits'` | table `attrs` | `parents: string[]` |
 | `'StorageParams'` | table / index `attrs` | `params: Record<string,string>` |
 | `'IndexInclude'` | index / unique-constraint `attrs` | `columns: string[]` |
-| `'IndexNullsDistinct'` | index `attrs` | `V: boolean` |
-| `'IndexType'` | index `attrs` | `T` (access method, non-btree only) |
-| `'IndexPredicate'` | index `attrs` | `P` (partial-index WHERE text) |
+| `'IndexNullsDistinct'` | index `attrs` | `value: boolean` |
+| `'IndexType'` | index `attrs` | `type` (access method, non-btree only) |
+| `'IndexPredicate'` | index `attrs` | `predicate` (partial-index WHERE text) |
 | `'Concurrently'` | index `attrs` | — |
 | `'IndexColumnProp'` | index-part `attrs` | `nullsFirst`, `nullsLast` |
 | `'IndexOpClass'` | index-part `attrs` | `name` |

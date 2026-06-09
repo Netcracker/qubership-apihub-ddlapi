@@ -298,7 +298,8 @@ export function handleCreateTable(
         attrs.push({ kind: PgAttrKind.IndexInclude, columns: includeColNames } as Attr)
       }
       if (con.nulls_not_distinct) {
-        attrs.push({ kind: PgAttrKind.IndexNullsDistinct, V: false } as Attr)
+        // `value` is a descriptive rename of Atlas Go `V`; see ddlapi-authoring.
+        attrs.push({ kind: PgAttrKind.IndexNullsDistinct, value: false } as Attr)
       }
       const idxParts: IndexPart[] = colNames.map((_, i) => ({ seqNo: i }))
       const idx: Index = {
@@ -356,7 +357,7 @@ export function handleCreateTable(
   if (stmt.partspec) {
     const ps = stmt.partspec as Record<string, unknown>
     const strategy = ps['strategy'] as string | undefined
-    const T = strategy === 'PARTITION_STRATEGY_RANGE' ? PgPartitionStrategy.Range
+    const partitionType = strategy === 'PARTITION_STRATEGY_RANGE' ? PgPartitionStrategy.Range
       : strategy === 'PARTITION_STRATEGY_LIST' ? PgPartitionStrategy.List
         : PgPartitionStrategy.Hash
     const params = (ps['partParams'] as Node[] | undefined) ?? []
@@ -367,7 +368,8 @@ export function handleCreateTable(
       if (pe['expr']) return { type: 'expr', expr: exprToString(pe['expr'] as Node) }
       return undefined
     }).filter(Boolean)
-    tableAttrs.push({ kind: PgAttrKind.Partition, T, parts } as Attr)
+    // `type` is a descriptive rename of Atlas Go `T`; see ddlapi-authoring.
+    tableAttrs.push({ kind: PgAttrKind.Partition, type: partitionType, parts } as Attr)
   }
 
   if (stmt.inhRelations && stmt.inhRelations.length > 0) {

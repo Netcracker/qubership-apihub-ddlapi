@@ -94,13 +94,15 @@ export function handleCreateIndex(
 
   // Access method — only record if not the default btree
   if (stmt.accessMethod && stmt.accessMethod !== 'btree') {
-    indexAttrs.push({ kind: PgAttrKind.IndexType, T: stmt.accessMethod } as Attr)
+    // `type` is a descriptive rename of Atlas Go `T`; see ddlapi-authoring (escape-hatch naming).
+    indexAttrs.push({ kind: PgAttrKind.IndexType, type: stmt.accessMethod } as Attr)
   }
 
   // WHERE predicate
   if (stmt.whereClause) {
     const pred = deparseSync(stmt.whereClause as Record<string, unknown>)
-    indexAttrs.push({ kind: PgAttrKind.IndexPredicate, P: pred } as Attr)
+    // `predicate` is a descriptive rename of Atlas Go `P`; see ddlapi-authoring.
+    indexAttrs.push({ kind: PgAttrKind.IndexPredicate, predicate: pred } as Attr)
   }
 
   // CONCURRENTLY
@@ -110,7 +112,8 @@ export function handleCreateIndex(
 
   // NULLS [NOT] DISTINCT
   if (stmt.nulls_not_distinct) {
-    indexAttrs.push({ kind: PgAttrKind.IndexNullsDistinct, V: false } as Attr)
+    // `value` is a descriptive rename of Atlas Go `V`; see ddlapi-authoring.
+    indexAttrs.push({ kind: PgAttrKind.IndexNullsDistinct, value: false } as Attr)
   }
 
   // INCLUDE columns
