@@ -1,5 +1,9 @@
 import { prepareDdlExtractor, DdlParseError } from '../src'
 
+/** Extracts one table's slice SQL. Each test asserts it against literal expected text. */
+const sliceOf = async (ddl: string, name: string, schema = 'public'): Promise<string> =>
+  (await prepareDdlExtractor(ddl)).extractTable({ schema, name })!.sql
+
 describe('prepareDdlExtractor (skeleton)', () => {
   describe('parse failures', () => {
     test('throws DdlParseError on invalid SQL', async () => {
@@ -34,19 +38,20 @@ CREATE TABLE audit.events (id int);
     })
 
     test('PARTITION OF tables are excluded (out of scope, matching buildFromDdl)', async () => {
-      const ex = await prepareDdlExtractor(
-        'CREATE TABLE measurement (logdate date) PARTITION BY RANGE (logdate);\n' +
-          'CREATE TABLE measurement_y2024 PARTITION OF measurement FOR VALUES FROM (\'2024-01-01\') TO (\'2025-01-01\');',
-      )
+      const ddl = `\
+CREATE TABLE measurement (logdate date) PARTITION BY RANGE (logdate);
+CREATE TABLE measurement_y2024 PARTITION OF measurement FOR VALUES FROM ('2024-01-01') TO ('2025-01-01');`
+      const ex = await prepareDdlExtractor(ddl)
       expect(ex.tables()).toEqual([{ schema: 'public', name: 'measurement' }])
     })
   })
 
   describe('extractTable', () => {
     test('returns the verbatim CREATE TABLE slice for a discovered table', async () => {
-      const ex = await prepareDdlExtractor(
-        'CREATE TABLE public.orders (id int);\nCREATE TABLE inventory (sku text);',
-      )
+      const ddl = `\
+CREATE TABLE public.orders (id int);
+CREATE TABLE inventory (sku text);`
+      const ex = await prepareDdlExtractor(ddl)
       const slice = ex.extractTable({ schema: 'public', name: 'inventory' })
       expect(slice).toBeDefined()
       expect(slice!.sql).toBe('CREATE TABLE inventory (sku text);')
@@ -55,7 +60,9 @@ CREATE TABLE audit.events (id int);
     })
 
     test('every ref from tables() round-trips through extractTable', async () => {
-      const ddl = 'CREATE TABLE a (id int);\nCREATE TABLE audit.b (id int);'
+      const ddl = `\
+CREATE TABLE a (id int);
+CREATE TABLE audit.b (id int);`
       const ex = await prepareDdlExtractor(ddl)
       for (const ref of ex.tables()) {
         const slice = ex.extractTable(ref)
@@ -81,288 +88,226 @@ CREATE TABLE audit.events (id int);
 
   describe('basic relevance closure', () => {
     test('includes the table, its indexes, triggers, and owned comments; omits unrelated', async () => {
-      const ddl = [
-        'CREATE TABLE orders (id int, total numeric);',
-        'CREATE INDEX idx_orders_total ON orders (total);',
-        "COMMENT ON TABLE orders IS 'the orders';",
-        'CREATE TABLE other (id int);',
-        'CREATE INDEX idx_other ON other (id);',
-      ].join('\n')
-      const ex = await prepareDdlExtractor(ddl)
-      const sql = ex.extractTable({ schema: 'public', name: 'orders' })!.sql
-      // orders' own statements are contiguous (0..2) → copied verbatim.
-      expect(sql).toBe(
-        [
-          'CREATE TABLE orders (id int, total numeric);',
-          'CREATE INDEX idx_orders_total ON orders (total);',
-          "COMMENT ON TABLE orders IS 'the orders';",
-        ].join('\n'),
-      )
-      expect(sql).not.toContain('other')
+      const ddl = `\
+CREATE TABLE orders (id int, total numeric);
+CREATE INDEX idx_orders_total ON orders (total);
+COMMENT ON TABLE orders IS 'the orders';
+CREATE TABLE other (id int);
+CREATE INDEX idx_other ON other (id);`
+      const expected = `\
+CREATE TABLE orders (id int, total numeric);
+CREATE INDEX idx_orders_total ON orders (total);
+COMMENT ON TABLE orders IS 'the orders';`
+      expect(await sliceOf(ddl, 'orders')).toBe(expected)
     })
 
     test('includes triggers and column comments owned by the table', async () => {
-      const ddl = [
-        'CREATE TABLE orders (id int, total numeric);',
-        'CREATE TRIGGER trg AFTER INSERT ON orders FOR EACH ROW EXECUTE FUNCTION f();',
-        "COMMENT ON COLUMN orders.total IS 'amount';",
-      ].join('\n')
-      const ex = await prepareDdlExtractor(ddl)
-      const sql = ex.extractTable({ schema: 'public', name: 'orders' })!.sql
-      expect(sql).toContain('CREATE TRIGGER trg')
-      expect(sql).toContain("COMMENT ON COLUMN orders.total IS 'amount'")
+      // every statement is relevant → the whole input is reproduced verbatim
+      const ddl = `\
+CREATE TABLE orders (id int, total numeric);
+CREATE TRIGGER trg AFTER INSERT ON orders FOR EACH ROW EXECUTE FUNCTION f();
+COMMENT ON COLUMN orders.total IS 'amount';`
+      expect(await sliceOf(ddl, 'orders')).toBe(ddl)
     })
 
     test('COMMENT ON INDEX is attributed to the owning table', async () => {
-      const ddl = [
-        'CREATE TABLE a (id int);',
-        'CREATE INDEX idx_a ON a (id);',
-        "COMMENT ON INDEX idx_a IS 'speedy';",
-      ].join('\n')
-      const ex = await prepareDdlExtractor(ddl)
-      const sql = ex.extractTable({ schema: 'public', name: 'a' })!.sql
-      expect(sql).toContain("COMMENT ON INDEX idx_a IS 'speedy'")
+      const ddl = `\
+CREATE TABLE a (id int);
+CREATE INDEX idx_a ON a (id);
+COMMENT ON INDEX idx_a IS 'speedy';`
+      expect(await sliceOf(ddl, 'a')).toBe(ddl)
     })
 
     test('COMMENT ON INDEX for a named UNIQUE constraint index is attributed to its table', async () => {
-      const ddl = [
-        'CREATE TABLE t (id int, code text, CONSTRAINT uq_code UNIQUE (code));',
-        "COMMENT ON INDEX uq_code IS 'unique codes';",
-      ].join('\n')
-      const ex = await prepareDdlExtractor(ddl)
-      const sql = ex.extractTable({ schema: 'public', name: 't' })!.sql
-      expect(sql).toContain("COMMENT ON INDEX uq_code IS 'unique codes'")
+      const ddl = `\
+CREATE TABLE t (id int, code text, CONSTRAINT uq_code UNIQUE (code));
+COMMENT ON INDEX uq_code IS 'unique codes';`
+      expect(await sliceOf(ddl, 't')).toBe(ddl)
     })
 
     test('COMMENT ON INDEX for an inline named UNIQUE column constraint is attributed', async () => {
-      const ddl = [
-        'CREATE TABLE t (id int, code text CONSTRAINT uq_code UNIQUE);',
-        "COMMENT ON INDEX uq_code IS 'unique codes';",
-      ].join('\n')
-      const ex = await prepareDdlExtractor(ddl)
-      const sql = ex.extractTable({ schema: 'public', name: 't' })!.sql
-      expect(sql).toContain("COMMENT ON INDEX uq_code IS 'unique codes'")
+      const ddl = `\
+CREATE TABLE t (id int, code text CONSTRAINT uq_code UNIQUE);
+COMMENT ON INDEX uq_code IS 'unique codes';`
+      expect(await sliceOf(ddl, 't')).toBe(ddl)
     })
 
     test('non-contiguous selection preserves source order with a normalized seam', async () => {
-      const ddl = [
-        'CREATE TABLE a (id int);',
-        'CREATE TABLE b (id int);', // dropped from a's slice
-        'CREATE INDEX idx_a ON a (id);',
-      ].join('\n')
-      const ex = await prepareDdlExtractor(ddl)
-      const sql = ex.extractTable({ schema: 'public', name: 'a' })!.sql
-      expect(sql).toBe('CREATE TABLE a (id int);\n\nCREATE INDEX idx_a ON a (id);')
-      expect(sql).not.toContain('TABLE b')
+      // table b sits between a and a's index and must be dropped → one-blank-line seam.
+      const ddl = `\
+CREATE TABLE a (id int);
+CREATE TABLE b (id int);
+CREATE INDEX idx_a ON a (id);`
+      const expected = `\
+CREATE TABLE a (id int);
+
+CREATE INDEX idx_a ON a (id);`
+      expect(await sliceOf(ddl, 'a')).toBe(expected)
     })
 
     test('a column comment on a different table is not pulled in', async () => {
-      const ddl = [
-        'CREATE TABLE a (id int);',
-        'CREATE TABLE b (id int);',
-        "COMMENT ON COLUMN b.id IS 'b only';",
-      ].join('\n')
-      const ex = await prepareDdlExtractor(ddl)
-      const sql = ex.extractTable({ schema: 'public', name: 'a' })!.sql
-      expect(sql).toBe('CREATE TABLE a (id int);')
+      const ddl = `\
+CREATE TABLE a (id int);
+CREATE TABLE b (id int);
+COMMENT ON COLUMN b.id IS 'b only';`
+      expect(await sliceOf(ddl, 'a')).toBe('CREATE TABLE a (id int);')
     })
 
-    test('one extractor serves many tables (reuse)', async () => {
-      const ddl = [
-        'CREATE TABLE a (id int);',
-        'CREATE INDEX idx_a ON a (id);',
-        'CREATE TABLE b (id int);',
-        'CREATE INDEX idx_b ON b (id);',
-      ].join('\n')
+    test('one extractor serves many tables (reuse), each its own exact subset', async () => {
+      const ddl = `\
+CREATE TABLE a (id int);
+CREATE INDEX idx_a ON a (id);
+CREATE TABLE b (id int);
+CREATE INDEX idx_b ON b (id);`
+      const expectedA = `\
+CREATE TABLE a (id int);
+CREATE INDEX idx_a ON a (id);`
+      const expectedB = `\
+CREATE TABLE b (id int);
+CREATE INDEX idx_b ON b (id);`
       const ex = await prepareDdlExtractor(ddl)
-      const a = ex.extractTable({ schema: 'public', name: 'a' })!.sql
-      const b = ex.extractTable({ schema: 'public', name: 'b' })!.sql
-      expect(a).toContain('idx_a')
-      expect(a).not.toContain('idx_b')
-      expect(b).toContain('idx_b')
-      expect(b).not.toContain('idx_a')
+      expect(ex.extractTable({ schema: 'public', name: 'a' })!.sql).toBe(expectedA)
+      expect(ex.extractTable({ schema: 'public', name: 'b' })!.sql).toBe(expectedB)
     })
   })
 
   describe('type-dependency closure', () => {
-    const extract = async (ddl: string, name: string, schema = 'public') =>
-      (await prepareDdlExtractor(ddl)).extractTable({ schema, name })!.sql
-
     test('column → enum type is included; unused types are not', async () => {
-      const sql = await extract(
-        [
-          "CREATE TYPE mood AS ENUM ('happy', 'sad');",
-          'CREATE TABLE person (id int, m mood);',
-          "CREATE TYPE unused AS ENUM ('x');",
-        ].join('\n'),
-        'person',
-      )
-      expect(sql).toContain('CREATE TYPE mood AS ENUM')
-      expect(sql).not.toContain('unused')
+      const ddl = `\
+CREATE TYPE mood AS ENUM ('happy', 'sad');
+CREATE TABLE person (id int, m mood);
+CREATE TYPE unused AS ENUM ('x');`
+      const expected = `\
+CREATE TYPE mood AS ENUM ('happy', 'sad');
+CREATE TABLE person (id int, m mood);`
+      expect(await sliceOf(ddl, 'person')).toBe(expected)
     })
 
-    test('transitive: column → composite → enum', async () => {
-      const sql = await extract(
-        [
-          "CREATE TYPE mood AS ENUM ('happy');",
-          'CREATE TYPE profile AS (status mood, bio text);',
-          'CREATE TABLE person (id int, p profile);',
-        ].join('\n'),
-        'person',
-      )
-      expect(sql).toContain('CREATE TYPE profile AS')
-      expect(sql).toContain('CREATE TYPE mood AS ENUM')
+    test('transitive: column → composite → enum (in source order)', async () => {
+      const ddl = `\
+CREATE TYPE mood AS ENUM ('happy');
+CREATE TYPE profile AS (status mood, bio text);
+CREATE TABLE person (id int, p profile);`
+      expect(await sliceOf(ddl, 'person')).toBe(ddl)
     })
 
     test('transitive: column → domain → base domain', async () => {
-      const sql = await extract(
-        [
-          'CREATE DOMAIN positive AS int CHECK (VALUE > 0);',
-          'CREATE DOMAIN small_positive AS positive CHECK (VALUE < 100);',
-          'CREATE TABLE t (id int, q small_positive);',
-        ].join('\n'),
-        't',
-      )
-      expect(sql).toContain('CREATE DOMAIN small_positive')
-      expect(sql).toContain('CREATE DOMAIN positive')
+      const ddl = `\
+CREATE DOMAIN positive AS int CHECK (VALUE > 0);
+CREATE DOMAIN small_positive AS positive CHECK (VALUE < 100);
+CREATE TABLE t (id int, q small_positive);`
+      expect(await sliceOf(ddl, 't')).toBe(ddl)
     })
 
     test('array element type (mood[]) is detected', async () => {
-      const sql = await extract(
-        ["CREATE TYPE mood AS ENUM ('a');", 'CREATE TABLE t (id int, moods mood[]);'].join('\n'),
-        't',
-      )
-      expect(sql).toContain('CREATE TYPE mood AS ENUM')
+      const ddl = `\
+CREATE TYPE mood AS ENUM ('a');
+CREATE TABLE t (id int, moods mood[]);`
+      expect(await sliceOf(ddl, 't')).toBe(ddl)
     })
 
     test('schema-qualified type reference is resolved as-is', async () => {
-      const sql = await extract(
-        ["CREATE TYPE audit.mood AS ENUM ('a');", 'CREATE TABLE public.t (id int, m audit.mood);'].join('\n'),
-        't',
-      )
-      expect(sql).toContain('CREATE TYPE audit.mood AS ENUM')
+      const ddl = `\
+CREATE TYPE audit.mood AS ENUM ('a');
+CREATE TABLE public.t (id int, m audit.mood);`
+      expect(await sliceOf(ddl, 't')).toBe(ddl)
     })
 
     test('expression-cast-only reference pulls the type in (diverges from buildFromDdl)', async () => {
-      const sql = await extract(
-        [
-          "CREATE TYPE mood AS ENUM ('a', 'b');",
-          "CREATE TABLE t (id int, s text, CHECK (s::mood = 'a'));",
-        ].join('\n'),
-        't',
-      )
-      expect(sql).toContain('CREATE TYPE mood AS ENUM')
+      const ddl = `\
+CREATE TYPE mood AS ENUM ('a', 'b');
+CREATE TABLE t (id int, s text, CHECK (s::mood = 'a'));`
+      expect(await sliceOf(ddl, 't')).toBe(ddl)
     })
 
     test('a type used only in an included index expression is pulled in', async () => {
-      const sql = await extract(
-        [
-          "CREATE TYPE mood AS ENUM ('a', 'b');",
-          'CREATE TABLE t (id int, s text);',
-          'CREATE INDEX idx ON t ((s::mood));',
-        ].join('\n'),
-        't',
-      )
-      expect(sql).toContain('CREATE INDEX idx')
-      expect(sql).toContain('CREATE TYPE mood AS ENUM')
+      const ddl = `\
+CREATE TYPE mood AS ENUM ('a', 'b');
+CREATE TABLE t (id int, s text);
+CREATE INDEX idx ON t ((s::mood));`
+      expect(await sliceOf(ddl, 't')).toBe(ddl)
     })
 
     test('a type used only in an included index WHERE predicate is pulled in', async () => {
-      const sql = await extract(
-        [
-          "CREATE TYPE mood AS ENUM ('a', 'b');",
-          'CREATE TABLE t (id int, s text);',
-          "CREATE INDEX idx ON t (id) WHERE (s::mood = 'a');",
-        ].join('\n'),
-        't',
-      )
-      expect(sql).toContain('CREATE TYPE mood AS ENUM')
+      const ddl = `\
+CREATE TYPE mood AS ENUM ('a', 'b');
+CREATE TABLE t (id int, s text);
+CREATE INDEX idx ON t (id) WHERE (s::mood = 'a');`
+      expect(await sliceOf(ddl, 't')).toBe(ddl)
     })
 
     test('a type used only in an included trigger WHEN clause is pulled in', async () => {
-      const sql = await extract(
-        [
-          "CREATE TYPE mood AS ENUM ('a', 'b');",
-          'CREATE TABLE t (id int, s text);',
-          "CREATE TRIGGER trg BEFORE UPDATE ON t FOR EACH ROW WHEN (NEW.s::mood = 'a') EXECUTE FUNCTION f();",
-        ].join('\n'),
-        't',
-      )
-      expect(sql).toContain('CREATE TRIGGER trg')
-      expect(sql).toContain('CREATE TYPE mood AS ENUM')
+      const ddl = `\
+CREATE TYPE mood AS ENUM ('a', 'b');
+CREATE TABLE t (id int, s text);
+CREATE TRIGGER trg BEFORE UPDATE ON t FOR EACH ROW WHEN (NEW.s::mood = 'a') EXECUTE FUNCTION f();`
+      expect(await sliceOf(ddl, 't')).toBe(ddl)
     })
 
-    test('COMMENT ON TYPE is included for a used type, excluded for an unused one', async () => {
-      const sql = await extract(
-        [
-          "CREATE TYPE mood AS ENUM ('a');",
-          "COMMENT ON TYPE mood IS 'feelings';",
-          "CREATE TYPE unused AS ENUM ('x');",
-          "COMMENT ON TYPE unused IS 'nope';",
-          'CREATE TABLE t (id int, m mood);',
-        ].join('\n'),
-        't',
-      )
-      expect(sql).toContain("COMMENT ON TYPE mood IS 'feelings'")
-      expect(sql).not.toContain('unused')
-      expect(sql).not.toContain('nope')
+    test('COMMENT ON TYPE included for a used type, excluded for an unused one (seam across drop)', async () => {
+      // mood + its comment are kept; unused + its comment are dropped, leaving a
+      // one-blank-line seam before the table.
+      const ddl = `\
+CREATE TYPE mood AS ENUM ('a');
+COMMENT ON TYPE mood IS 'feelings';
+CREATE TYPE unused AS ENUM ('x');
+COMMENT ON TYPE unused IS 'nope';
+CREATE TABLE t (id int, m mood);`
+      const expected = `\
+CREATE TYPE mood AS ENUM ('a');
+COMMENT ON TYPE mood IS 'feelings';
+
+CREATE TABLE t (id int, m mood);`
+      expect(await sliceOf(ddl, 't')).toBe(expected)
     })
 
-    test('a self-referential composite type terminates (cycle guard)', async () => {
-      const sql = await extract(
-        ['CREATE TYPE node AS (next node, val int);', 'CREATE TABLE t (id int, n node);'].join('\n'),
-        't',
-      )
-      expect(sql).toContain('CREATE TYPE node AS')
-      // included exactly once despite the self-reference
-      expect(sql.match(/CREATE TYPE node AS/g)).toHaveLength(1)
+    test('a self-referential composite type terminates and is emitted once', async () => {
+      const ddl = `\
+CREATE TYPE node AS (next node, val int);
+CREATE TABLE t (id int, n node);`
+      expect(await sliceOf(ddl, 't')).toBe(ddl)
     })
   })
 
   describe('LIKE closure', () => {
-    const extract = async (ddl: string, name: string, schema = 'public') =>
-      (await prepareDdlExtractor(ddl)).extractTable({ schema, name })!.sql
-
-    test('LIKE source is pulled in as a full closure (its table, index, comment, types)', async () => {
-      const sql = await extract(
-        [
-          "CREATE TYPE mood AS ENUM ('a');",
-          'CREATE TABLE base (id int, m mood);',
-          'CREATE INDEX idx_base ON base (id);',
-          "COMMENT ON TABLE base IS 'the base';",
-          'CREATE TABLE child (LIKE base, extra text);',
-        ].join('\n'),
-        'child',
-      )
-      expect(sql).toContain('CREATE TABLE child')
-      expect(sql).toContain('CREATE TABLE base')
-      expect(sql).toContain('idx_base')
-      expect(sql).toContain("COMMENT ON TABLE base IS 'the base'")
-      expect(sql).toContain('CREATE TYPE mood AS ENUM')
+    test('LIKE source is pulled in as a full closure (its table, index, comment, types), in source order', async () => {
+      const ddl = `\
+CREATE TYPE mood AS ENUM ('a');
+CREATE TABLE base (id int, m mood);
+CREATE INDEX idx_base ON base (id);
+COMMENT ON TABLE base IS 'the base';
+CREATE TABLE child (LIKE base, extra text);`
+      expect(await sliceOf(ddl, 'child')).toBe(ddl)
     })
 
-    test('a LIKE chain pulls in every ancestor', async () => {
-      const sql = await extract(
-        [
-          'CREATE TABLE a (id int);',
-          'CREATE TABLE b (LIKE a, b1 text);',
-          'CREATE TABLE c (LIKE b, c1 text);',
-        ].join('\n'),
-        'c',
-      )
-      expect(sql).toContain('CREATE TABLE c')
-      expect(sql).toContain('CREATE TABLE b')
-      expect(sql).toContain('CREATE TABLE a')
+    test('LIKE pulls in the source but not an unrelated table between them (seam)', async () => {
+      // `noise` sits between base and child in source and must be dropped,
+      // producing a one-blank-line seam between base's closure and child.
+      const ddl = `\
+CREATE TABLE base (id int);
+CREATE TABLE noise (id int);
+CREATE TABLE child (LIKE base, extra text);`
+      const expected = `\
+CREATE TABLE base (id int);
+
+CREATE TABLE child (LIKE base, extra text);`
+      expect(await sliceOf(ddl, 'child')).toBe(expected)
     })
 
-    test('a mutually-referential LIKE pair terminates (cycle guard)', async () => {
-      const sql = await extract(
-        ['CREATE TABLE a (LIKE b, x int);', 'CREATE TABLE b (LIKE a, y int);'].join('\n'),
-        'a',
-      )
-      expect(sql).toContain('CREATE TABLE a')
-      expect(sql).toContain('CREATE TABLE b')
-      expect(sql.match(/CREATE TABLE a/g)).toHaveLength(1)
+    test('a LIKE chain pulls in every ancestor, in source order', async () => {
+      const ddl = `\
+CREATE TABLE a (id int);
+CREATE TABLE b (LIKE a, b1 text);
+CREATE TABLE c (LIKE b, c1 text);`
+      expect(await sliceOf(ddl, 'c')).toBe(ddl)
+    })
+
+    test('a mutually-referential LIKE pair terminates and emits each once', async () => {
+      // a and b are adjacent in source → one verbatim run (single newline, no seam).
+      const ddl = `\
+CREATE TABLE a (LIKE b, x int);
+CREATE TABLE b (LIKE a, y int);`
+      expect(await sliceOf(ddl, 'a')).toBe(ddl)
     })
   })
 
@@ -371,14 +316,12 @@ CREATE TABLE audit.events (id int);
       (await prepareDdlExtractor(ddl)).extractTable({ schema, name })!
 
     test('OmittedForeignKeyTarget — FK to a table not included (structured refTable)', async () => {
-      const r = await slice(
-        [
-          'CREATE TABLE orders (id int, customer_id int CONSTRAINT fk_cust REFERENCES customers (id));',
-          'CREATE TABLE customers (id int);',
-        ].join('\n'),
-        'orders',
-      )
-      expect(r.sql).not.toContain('CREATE TABLE customers') // FK target excluded by design
+      const ddl = `\
+CREATE TABLE orders (id int, customer_id int CONSTRAINT fk_cust REFERENCES customers (id));
+CREATE TABLE customers (id int);`
+      const r = await slice(ddl, 'orders')
+      // FK target (customers) excluded by design — only orders is emitted.
+      expect(r.sql).toBe('CREATE TABLE orders (id int, customer_id int CONSTRAINT fk_cust REFERENCES customers (id));')
       const fk = r.warnings.find(w => w.kind === 'OmittedForeignKeyTarget')
       expect(fk).toMatchObject({
         kind: 'OmittedForeignKeyTarget',
@@ -393,10 +336,10 @@ CREATE TABLE audit.events (id int);
     })
 
     test('DuplicateTable — first definition wins and is emitted', async () => {
-      const r = await slice(
-        ['CREATE TABLE t (id int);', 'CREATE TABLE t (id int, extra text);'].join('\n'),
-        't',
-      )
+      const ddl = `\
+CREATE TABLE t (id int);
+CREATE TABLE t (id int, extra text);`
+      const r = await slice(ddl, 't')
       expect(r.sql).toBe('CREATE TABLE t (id int);')
       expect(r.warnings.find(w => w.kind === 'DuplicateTable')).toMatchObject({
         kind: 'DuplicateTable',
@@ -405,11 +348,11 @@ CREATE TABLE audit.events (id int);
     })
 
     test('OutOfScopeStatementDropped — ALTER TABLE naming the table', async () => {
-      const r = await slice(
-        ['CREATE TABLE t (id int);', 'ALTER TABLE t ADD COLUMN x text;'].join('\n'),
-        't',
-      )
-      expect(r.sql).not.toContain('ALTER TABLE')
+      const ddl = `\
+CREATE TABLE t (id int);
+ALTER TABLE t ADD COLUMN x text;`
+      const r = await slice(ddl, 't')
+      expect(r.sql).toBe('CREATE TABLE t (id int);') // ALTER TABLE dropped
       expect(r.warnings.find(w => w.kind === 'OutOfScopeStatementDropped')).toMatchObject({
         kind: 'OutOfScopeStatementDropped',
         statementType: 'AlterTableStmt',
@@ -431,7 +374,8 @@ CREATE TABLE audit.events (id int);
   })
 
   describe('end-to-end (realistic multi-table DDL)', () => {
-    const ddl = `-- Enumerations
+    const ddl = `\
+-- Enumerations
 CREATE TYPE order_status AS ENUM ('pending', 'shipped');
 
 CREATE TABLE customers (
@@ -468,36 +412,59 @@ CREATE TABLE orders_archive (LIKE orders);`
       }
     })
 
-    test('customers: just its table + comment, nothing from orders', async () => {
+    test('customers: exactly its table + comment (verbatim), nothing from orders', async () => {
+      const expected = `\
+CREATE TABLE customers (
+  id bigint PRIMARY KEY,
+  email text NOT NULL
+);
+COMMENT ON TABLE customers IS 'People who buy things';`
       const ex = await prepareDdlExtractor(ddl)
       const r = ex.extractTable({ schema: 'public', name: 'customers' })!
-      expect(r.sql).toContain('CREATE TABLE customers')
-      expect(r.sql).toContain("COMMENT ON TABLE customers IS 'People who buy things'")
-      expect(r.sql).not.toContain('orders')
+      expect(r.sql).toBe(expected)
       expect(r.warnings).toEqual([])
     })
 
-    test('orders: pulls its index, column comment, used enum; omits FK target with a warning', async () => {
+    test('orders: exact subset — used enum, table, index, column comment; FK target omitted (+warning)', async () => {
+      // order_status (the used enum) is pulled in; the `-- Enumerations` comment is
+      // kept because it directly precedes that statement (adjacency). The customers
+      // table and the audit_seq sequence are dropped; the seam is one blank line.
+      const expected = `\
+-- Enumerations
+CREATE TYPE order_status AS ENUM ('pending', 'shipped');
+
+CREATE TABLE orders (
+  id bigint PRIMARY KEY,
+  customer_id bigint REFERENCES customers (id),
+  status order_status NOT NULL
+);
+CREATE INDEX idx_orders_customer ON orders (customer_id);
+COMMENT ON COLUMN orders.status IS 'lifecycle';`
       const ex = await prepareDdlExtractor(ddl)
       const r = ex.extractTable({ schema: 'public', name: 'orders' })!
-      expect(r.sql).toContain("CREATE TYPE order_status AS ENUM ('pending', 'shipped')")
-      expect(r.sql).toContain('CREATE TABLE orders')
-      expect(r.sql).toContain('CREATE INDEX idx_orders_customer')
-      expect(r.sql).toContain("COMMENT ON COLUMN orders.status IS 'lifecycle'")
-      expect(r.sql).not.toContain('CREATE TABLE customers')
-      expect(r.sql).not.toContain('audit_seq')
+      expect(r.sql).toBe(expected)
       expect(r.warnings).toContainEqual(
         expect.objectContaining({ kind: 'OmittedForeignKeyTarget', refTable: { schema: 'public', name: 'customers' } }),
       )
     })
 
-    test('orders_archive: LIKE pulls in orders and its closure (enum, index, comment)', async () => {
+    test('orders_archive: exact subset — LIKE pulls in orders and its full closure', async () => {
+      const expected = `\
+-- Enumerations
+CREATE TYPE order_status AS ENUM ('pending', 'shipped');
+
+CREATE TABLE orders (
+  id bigint PRIMARY KEY,
+  customer_id bigint REFERENCES customers (id),
+  status order_status NOT NULL
+);
+CREATE INDEX idx_orders_customer ON orders (customer_id);
+COMMENT ON COLUMN orders.status IS 'lifecycle';
+
+CREATE TABLE orders_archive (LIKE orders);`
       const ex = await prepareDdlExtractor(ddl)
       const r = ex.extractTable({ schema: 'public', name: 'orders_archive' })!
-      expect(r.sql).toContain('CREATE TABLE orders_archive')
-      expect(r.sql).toContain('CREATE TABLE orders')
-      expect(r.sql).toContain('CREATE TYPE order_status')
-      expect(r.sql).toContain('CREATE INDEX idx_orders_customer')
+      expect(r.sql).toBe(expected)
       // orders' FK target (customers) is still omitted → warning carries through the LIKE source.
       expect(r.warnings).toContainEqual(
         expect.objectContaining({ kind: 'OmittedForeignKeyTarget', refTable: { schema: 'public', name: 'customers' } }),

@@ -141,10 +141,30 @@ implementation, with rationale. Newest entries appended under each task.
 - **No new `.sql` fixtures.** All extractor tests use inline multi-statement SQL (per the
   ddlapi-testing guidance for cross-statement behaviour), so `sqlSamples.test.ts` is unaffected.
 
+## Testing strategy — exact-form assertions
+
+Relevance/type/LIKE/warning/e2e extractor tests assert the **exact** extracted SQL (`toBe`) against
+**literal expected text**, not substrings and not a computed oracle. Each test writes the input DDL
+and the expected slice as plain template-literal strings, so both are directly readable and
+verifiable. This pins **inclusion, exclusion, and source order** in one assertion — substring checks
+(`toContain`) silently passed on over-inclusion or wrong order. (An earlier version used an
+`expectedSlice(stmts, keptIndices)` oracle; it was replaced with literal text because the slice
+indices were hard to verify by reading — and writing the literal output immediately caught a wrong
+seam in one expectation.)
+
+**Behavior this surfaced — reviewed and kept (user decision):** a section-style comment that
+*directly* precedes a pulled-in dependency is included with it. E.g. `-- Enumerations\nCREATE TYPE
+order_status …` — when a table uses `order_status`, the `-- Enumerations` line comes along, because
+the comment is structurally adjacent (no blank line) to that statement. This is consistent with the
+run-head comment rule (directly-touching comments are kept); it can pull a file-level section header
+into a slice. Considered and **intentionally kept** as-is — current behavior is locked by the e2e
+exact-form tests.
+
 ## Final state
 
-All 9 tasks complete. `tsc --noEmit` clean, `vite build` succeeds (new public API present in
-`dist/index.d.ts`), full suite green: **364 tests, 13 suites**. New source files:
+All 9 tasks complete, plus two code-review follow-ups and an exact-form test pass. `tsc --noEmit`
+clean, `vite build` succeeds (new public API present in `dist/index.d.ts`), full suite green:
+**372 tests, 13 suites**. New source files:
 `spanEngine.ts`, `extractTableDdl.ts`, `stmtTargets.ts`, `supportedStatements.ts`,
 `knownTypeNames.ts`. New tests: `spanEngine.test.ts`, `extractTableDdl.test.ts`,
 `stmtTargets.test.ts`, `supportedStatements.test.ts`. `buildFromDdl.ts` refactored to consume the
