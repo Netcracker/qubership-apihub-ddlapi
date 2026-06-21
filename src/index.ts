@@ -19,3 +19,10 @@ export {
   type DdlNonFatalError,
   type BuildFromDdlOptions,
 } from './parser/buildFromDdl'
+export {
+  prepareDdlExtractor,
+  type DdlExtractor,
+  type TableRef,
+  type TableDdlSlice,
+  type DdlExtractorWarning,
+} from './parser/extractTableDdl'

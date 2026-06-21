@@ -154,6 +154,47 @@ try {
 }
 ```
 
+## Extracting per-table DDL subsets
+
+`prepareDdlExtractor(ddl)` is a separate entry point for slicing a multi-table DDL
+into a verbatim subset per table — distinct from `buildFromDdl`, which builds the
+`Realm` model. Use it when you need the *original SQL text* relevant to one table,
+not a structured model.
+
+```typescript
+import { prepareDdlExtractor } from '@netcracker/qubership-apihub-ddlapi'
+
+const extractor = await prepareDdlExtractor(ddl)   // heavy work once
+for (const ref of extractor.tables()) {            // { schema, name }, source order
+  const slice = extractor.extractTable(ref)!       // cheap, synchronous, repeatable
+  slice.sql        // verbatim subset: the CREATE TABLE + its indexes, triggers,
+                   // comments, the types it uses (transitively), and any LIKE source
+  slice.warnings   // structured notes (see below)
+}
+```
+
+Contract details that the signatures do not make obvious:
+
+- **Two-phase by design.** `prepareDdlExtractor` parses once (async, WASM); each
+  `extractTable` is synchronous and meant to be called once per table.
+- **Pass a `TableRef`, already normalized.** `extractTable({ schema, name })` does a
+  direct key lookup — identifiers must be in model-normalized form (unquoted →
+  lowercase, quoted → preserved, exactly as `tables()` / a `Realm` returns them). It
+  never re-folds or SQL-parses caller strings. Use `'public'` for unqualified tables.
+- **`undefined` is a lookup miss, not a failure.** Only invalid SQL throws
+  (`DdlParseError`, in `prepareDdlExtractor`); every non-fatal note is a `warning`.
+- **Scope matches `buildFromDdl`.** Only statement types `buildFromDdl` supports are
+  ever emitted; `ALTER TABLE`, sequences, functions, etc. are dropped.
+- **FK targets are excluded on purpose.** A foreign key's *clause* is kept (it lives
+  in the table's own `CREATE TABLE`), but the referenced table is not pulled in — you
+  get an `OmittedForeignKeyTarget` warning instead. LIKE sources, by contrast, *are*
+  pulled in (the table is unbuildable without them).
+- **`warnings`** is a discriminated union on `kind`: `OmittedForeignKeyTarget`
+  (`refTable`, `symbol?`), `OutOfScopeStatementDropped` (`statementType`, `range`),
+  `UnresolvedTypeReference` (`typeName`), `DuplicateTable` (`table`). Output preserves
+  source order, so a runnable input yields a runnable subset except for these
+  intentionally-omitted references.
+
 ## Referential equality after a build
 
 After a successful build the model shares object references rather than

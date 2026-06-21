@@ -10,6 +10,7 @@ import { PG_DEFAULT_SCHEMA } from '../postgres.constants'
 import { DDLAPI_VERSION } from '../schema'
 import type { SourceRange } from './positions'
 import { parseStatements, stmtTypeName, stmtBody } from './pgParser'
+import { SUPPORTED_STMT_TYPE_SET, type SupportedStmtType } from './supportedStatements'
 import { stmtRangeOf } from './astHelpers'
 import { SchemaAccumulator } from './schemaAccumulator'
 import { handleCreateTable } from './stmtHandlers/createTable'
@@ -116,28 +117,14 @@ export class DdlBuildError extends Error {
 
 // ── Statement dispatch ────────────────────────────────────────────────────────
 
-/** Statement type names that are out of scope — skipped with onError. */
-const OUT_OF_SCOPE_STMTS = new Set([
-  'AlterTableStmt',
-  'DropStmt',
-  'CreateSeqStmt',
-  'AlterSeqStmt',
-  'CreateSchemaStmt',
-  'CreateExtensionStmt',
-  'CreateFunctionStmt',
-  'AlterFunctionStmt',
-  'ViewStmt',
-  'SelectStmt',
-  'InsertStmt',
-  'UpdateStmt',
-  'DeleteStmt',
-  'TruncateStmt',
-  'GrantStmt',
-  'RevokeStmt',
-  'TransactionStmt',
-  'CreateRoleStmt',
-  'AlterRoleStmt',
-])
+/**
+ * Compile-time exhaustiveness sentinel: fails to type-check if `x` is not `never`.
+ * Guarantees the dispatch switch covers every SupportedStmtType — adding a name to
+ * SUPPORTED_STMT_TYPES without a handler case makes the default branch non-`never`.
+ */
+function assertNever(x: never): never {
+  throw new Error(`Unhandled supported statement type: ${String(x)}`)
+}
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
@@ -182,17 +169,18 @@ export async function buildFromDdl(ddl: string, options?: BuildFromDdlOptions): 
     const typeName = stmtTypeName(rawStmt)
     const range = stmtRangeOf(rawStmt)
 
-    if (OUT_OF_SCOPE_STMTS.has(typeName)) {
+    if (!SUPPORTED_STMT_TYPE_SET.has(typeName)) {
       onError({
         kind: DdlErrorKind.OutOfScopeStatement,
-        statementType: typeName,
-        message: `Statement type '${typeName}' is not supported`,
+        statementType: typeName || 'unknown',
+        message: `Statement type '${typeName || 'unknown'}' is not supported`,
         ...(range && { range }),
       })
       continue
     }
 
-    switch (typeName) {
+    const supported: SupportedStmtType = typeName as SupportedStmtType
+    switch (supported) {
       case 'CreateStmt': {
         const stmt = stmtBody(rawStmt, 'CreateStmt') as CreateStmt | undefined
         if (stmt) handleCreateTable(stmt, rawStmt, PG_DEFAULT_SCHEMA, acc, onError)
@@ -233,15 +221,11 @@ export async function buildFromDdl(ddl: string, options?: BuildFromDdlOptions): 
         if (stmt) handleCreateTrigger(stmt, rawStmt, PG_DEFAULT_SCHEMA, acc, onError)
         break
       }
-      default: {
-        onError({
-          kind: DdlErrorKind.OutOfScopeStatement,
-          statementType: typeName || 'unknown',
-          message: `Statement type '${typeName || 'unknown'}' is not supported`,
-          ...(range && { range }),
-        })
-        break
-      }
+      default:
+        // Unreachable: the SUPPORTED_STMT_TYPE_SET guard above filters out every
+        // non-supported type. `supported` is `never` here iff every
+        // SupportedStmtType has a case — see assertNever.
+        assertNever(supported)
     }
   }
 
