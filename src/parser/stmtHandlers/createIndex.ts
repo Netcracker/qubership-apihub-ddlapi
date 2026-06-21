@@ -10,6 +10,7 @@ import type { Expr } from '../../exprs'
 import { rawExpr } from '../../factories'
 import type { SchemaAccumulator } from '../schemaAccumulator'
 import { strVal, stmtRangeOf } from '../astHelpers'
+import { PgNode } from '../pgAst'
 import type { DdlNonFatalError } from '../buildFromDdl'
 
 export function handleCreateIndex(
@@ -50,7 +51,7 @@ export function handleCreateIndex(
 
   for (let i = 0; i < indexParams.length; i++) {
     const elemNode = indexParams[i] as Node
-    const elem = (elemNode as Record<string, unknown>)['IndexElem'] as IndexElem | undefined
+    const elem = (elemNode as Record<string, unknown>)[PgNode.IndexElem] as IndexElem | undefined
     if (!elem) continue
 
     const partAttrs: Attr[] = []
@@ -120,7 +121,7 @@ export function handleCreateIndex(
   const includingParams = (stmt.indexIncludingParams ?? []) as Node[]
   if (includingParams.length > 0) {
     const includeColNames = includingParams.map(n => {
-      const elem = (n as Record<string, unknown>)['IndexElem'] as IndexElem | undefined
+      const elem = (n as Record<string, unknown>)[PgNode.IndexElem] as IndexElem | undefined
       return elem?.name ?? ''
     }).filter(Boolean)
     if (includeColNames.length > 0) {
@@ -132,7 +133,7 @@ export function handleCreateIndex(
   if (stmt.options && stmt.options.length > 0) {
     const params: Record<string, string> = {}
     for (const opt of stmt.options as Node[]) {
-      const de = (opt as Record<string, unknown>)['DefElem'] as Record<string, unknown> | undefined
+      const de = (opt as Record<string, unknown>)[PgNode.DefElem] as Record<string, unknown> | undefined
       if (!de) continue
       const name = de['defname'] as string | undefined
       const arg = de['arg'] as Node | undefined

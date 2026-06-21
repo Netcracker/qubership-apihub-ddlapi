@@ -13,6 +13,7 @@ import type {
 } from '@pgsql/types'
 import { strVal, stmtRangeOf } from './astHelpers'
 import { stmtTypeName, stmtBody } from './pgParser'
+import { PgNode, PgConstrType, PgCommentObject } from './pgAst'
 import type { SupportedStmtType } from './supportedStatements'
 import type { SourceRange } from './positions'
 
@@ -62,7 +63,7 @@ export interface StatementDescriptor {
 
 /** Extracts String svals from a { List: { items: [...] } } node (COMMENT object lists). */
 function listStrings(node: Node | undefined): string[] {
-  const list = (node as Record<string, unknown> | undefined)?.['List'] as { items?: Node[] } | undefined
+  const list = (node as Record<string, unknown> | undefined)?.[PgNode.List] as { items?: Node[] } | undefined
   if (!list?.items) return []
   return list.items.map(n => strVal(n) ?? '').filter(Boolean)
 }
@@ -89,21 +90,21 @@ function keyFromNameNodes(nodes: Node[], defaultSchema: string): string | undefi
 function foreignKeysOf(stmt: CreateStmt, defaultSchema: string): ForeignKeyRef[] {
   const out: ForeignKeyRef[] = []
   const push = (con: Constraint): void => {
-    if (con.contype !== 'CONSTR_FOREIGN') return
+    if (con.contype !== PgConstrType.ForeignKey) return
     const pk = con.pktable as { relname?: string; schemaname?: string } | undefined
     if (!pk?.relname) return
     out.push({ refTableKey: `${pk.schemaname ?? defaultSchema}.${pk.relname}`, ...(con.conname && { symbol: con.conname }) })
   }
   for (const elt of (stmt.tableElts ?? []) as Node[]) {
     const e = elt as Record<string, unknown>
-    if (e['ColumnDef']) {
-      const cd = e['ColumnDef'] as ColumnDef
+    if (e[PgNode.ColumnDef]) {
+      const cd = e[PgNode.ColumnDef] as ColumnDef
       for (const conNode of (cd.constraints ?? []) as Node[]) {
-        const con = (conNode as Record<string, unknown>)['Constraint'] as Constraint | undefined
+        const con = (conNode as Record<string, unknown>)[PgNode.Constraint] as Constraint | undefined
         if (con) push(con)
       }
-    } else if (e['Constraint']) {
-      push(e['Constraint'] as Constraint)
+    } else if (e[PgNode.Constraint]) {
+      push(e[PgNode.Constraint] as Constraint)
     }
   }
   return out
@@ -118,17 +119,17 @@ function foreignKeysOf(stmt: CreateStmt, defaultSchema: string): ForeignKeyRef[]
 function constraintIndexNamesOf(stmt: CreateStmt): string[] {
   const out: string[] = []
   const pushUnique = (con: Constraint): void => {
-    if (con.contype === 'CONSTR_UNIQUE' && con.conname) out.push(con.conname)
+    if (con.contype === PgConstrType.Unique && con.conname) out.push(con.conname)
   }
   for (const elt of (stmt.tableElts ?? []) as Node[]) {
     const e = elt as Record<string, unknown>
-    if (e['ColumnDef']) {
-      for (const conNode of ((e['ColumnDef'] as ColumnDef).constraints ?? []) as Node[]) {
-        const con = (conNode as Record<string, unknown>)['Constraint'] as Constraint | undefined
+    if (e[PgNode.ColumnDef]) {
+      for (const conNode of ((e[PgNode.ColumnDef] as ColumnDef).constraints ?? []) as Node[]) {
+        const con = (conNode as Record<string, unknown>)[PgNode.Constraint] as Constraint | undefined
         if (con) pushUnique(con)
       }
-    } else if (e['Constraint']) {
-      pushUnique(e['Constraint'] as Constraint)
+    } else if (e[PgNode.Constraint]) {
+      pushUnique(e[PgNode.Constraint] as Constraint)
     }
   }
   return out
@@ -138,7 +139,7 @@ function constraintIndexNamesOf(stmt: CreateStmt): string[] {
 function likeSourcesOf(stmt: CreateStmt, defaultSchema: string): string[] {
   const out: string[] = []
   for (const elt of (stmt.tableElts ?? []) as Node[]) {
-    const like = (elt as Record<string, unknown>)['TableLikeClause'] as
+    const like = (elt as Record<string, unknown>)[PgNode.TableLikeClause] as
       { relation?: { relname?: string; schemaname?: string } } | undefined
     if (like?.relation?.relname) {
       out.push(`${like.relation.schemaname ?? defaultSchema}.${like.relation.relname}`)
@@ -149,30 +150,30 @@ function likeSourcesOf(stmt: CreateStmt, defaultSchema: string): string[] {
 
 function commentTarget(stmt: CommentStmt, defaultSchema: string): CommentTarget {
   switch (stmt.objtype) {
-    case 'OBJECT_TABLE': {
+    case PgCommentObject.Table: {
       const key = keyFromParts(listStrings(stmt.object as Node | undefined), defaultSchema)
       return key ? { kind: 'table', tableKey: key } : { kind: 'other' }
     }
-    case 'OBJECT_COLUMN': {
+    case PgCommentObject.Column: {
       const parts = listStrings(stmt.object as Node | undefined)
       if (parts.length < 2) return { kind: 'other' }
       const column = parts[parts.length - 1]!
       const tableKey = keyFromParts(parts.slice(0, -1), defaultSchema)
       return tableKey ? { kind: 'column', tableKey, column } : { kind: 'other' }
     }
-    case 'OBJECT_TABCONSTRAINT': {
+    case PgCommentObject.TableConstraint: {
       const parts = listStrings(stmt.object as Node | undefined)
       if (parts.length < 2) return { kind: 'other' }
       const constraint = parts[parts.length - 1]!
       const tableKey = keyFromParts(parts.slice(0, -1), defaultSchema)
       return tableKey ? { kind: 'tableConstraint', tableKey, constraint } : { kind: 'other' }
     }
-    case 'OBJECT_INDEX': {
+    case PgCommentObject.Index: {
       const key = keyFromParts(listStrings(stmt.object as Node | undefined), defaultSchema)
       return key ? { kind: 'index', indexKey: key } : { kind: 'other' }
     }
-    case 'OBJECT_TYPE': {
-      const tn = (stmt.object as Record<string, unknown> | undefined)?.['TypeName'] as { names?: Node[] } | undefined
+    case PgCommentObject.Type: {
+      const tn = (stmt.object as Record<string, unknown> | undefined)?.[PgNode.TypeName] as { names?: Node[] } | undefined
       if (!tn?.names || tn.names.length === 0) return { kind: 'other' }
       const key = keyFromNameNodes(tn.names, defaultSchema)
       return key ? { kind: 'type', typeKey: key } : { kind: 'other' }
@@ -198,8 +199,8 @@ export function describeStatement(
   const base = { rawIndex, type, ...(range && { range }) }
 
   switch (type) {
-    case 'CreateStmt': {
-      const stmt = stmtBody(rawStmt, 'CreateStmt') as CreateStmt | undefined
+    case PgNode.CreateStmt: {
+      const stmt = stmtBody(rawStmt, PgNode.CreateStmt) as CreateStmt | undefined
       const rel = stmt?.relation
       if (!rel?.relname || stmt!.partbound) return undefined // PARTITION OF — out of scope
       const likeSources = likeSourcesOf(stmt!, defaultSchema)
@@ -216,8 +217,8 @@ export function describeStatement(
         },
       }
     }
-    case 'IndexStmt': {
-      const stmt = stmtBody(rawStmt, 'IndexStmt') as IndexStmt | undefined
+    case PgNode.IndexStmt: {
+      const stmt = stmtBody(rawStmt, PgNode.IndexStmt) as IndexStmt | undefined
       const rel = stmt?.relation
       if (!rel?.relname) return undefined
       const schema = rel.schemaname ?? defaultSchema
@@ -231,34 +232,34 @@ export function describeStatement(
         },
       }
     }
-    case 'CreateTrigStmt': {
-      const stmt = stmtBody(rawStmt, 'CreateTrigStmt') as CreateTrigStmt | undefined
+    case PgNode.CreateTrigStmt: {
+      const stmt = stmtBody(rawStmt, PgNode.CreateTrigStmt) as CreateTrigStmt | undefined
       const rel = stmt?.relation
       if (!rel?.relname) return undefined
       return { ...base, defines: { kind: 'trigger', targetTable: `${(rel as { schemaname?: string }).schemaname ?? defaultSchema}.${rel.relname}` } }
     }
-    case 'CommentStmt': {
-      const stmt = stmtBody(rawStmt, 'CommentStmt') as CommentStmt | undefined
+    case PgNode.CommentStmt: {
+      const stmt = stmtBody(rawStmt, PgNode.CommentStmt) as CommentStmt | undefined
       if (!stmt) return undefined
       return { ...base, defines: { kind: 'comment', target: commentTarget(stmt, defaultSchema) } }
     }
-    case 'CreateEnumStmt': {
-      const stmt = stmtBody(rawStmt, 'CreateEnumStmt') as CreateEnumStmt | undefined
+    case PgNode.CreateEnumStmt: {
+      const stmt = stmtBody(rawStmt, PgNode.CreateEnumStmt) as CreateEnumStmt | undefined
       const key = stmt ? keyFromNameNodes((stmt.typeName ?? []) as Node[], defaultSchema) : undefined
       return key ? { ...base, defines: { kind: 'type', key } } : undefined
     }
-    case 'CreateRangeStmt': {
-      const stmt = stmtBody(rawStmt, 'CreateRangeStmt') as CreateRangeStmt | undefined
+    case PgNode.CreateRangeStmt: {
+      const stmt = stmtBody(rawStmt, PgNode.CreateRangeStmt) as CreateRangeStmt | undefined
       const key = stmt ? keyFromNameNodes((stmt.typeName ?? []) as Node[], defaultSchema) : undefined
       return key ? { ...base, defines: { kind: 'type', key } } : undefined
     }
-    case 'CreateDomainStmt': {
-      const stmt = stmtBody(rawStmt, 'CreateDomainStmt') as CreateDomainStmt | undefined
+    case PgNode.CreateDomainStmt: {
+      const stmt = stmtBody(rawStmt, PgNode.CreateDomainStmt) as CreateDomainStmt | undefined
       const key = stmt ? keyFromNameNodes((stmt.domainname ?? []) as Node[], defaultSchema) : undefined
       return key ? { ...base, defines: { kind: 'type', key } } : undefined
     }
-    case 'CompositeTypeStmt': {
-      const stmt = stmtBody(rawStmt, 'CompositeTypeStmt') as CompositeTypeStmt | undefined
+    case PgNode.CompositeTypeStmt: {
+      const stmt = stmtBody(rawStmt, PgNode.CompositeTypeStmt) as CompositeTypeStmt | undefined
       const tv = stmt?.typevar
       if (!tv?.relname) return undefined
       return { ...base, defines: { kind: 'type', key: `${(tv as { schemaname?: string }).schemaname ?? defaultSchema}.${tv.relname}` } }

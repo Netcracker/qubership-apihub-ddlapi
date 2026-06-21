@@ -9,6 +9,7 @@ import { enumType, unsupportedType } from '../../factories'
 import { mapTypeName } from '../typeMapper'
 import type { SchemaAccumulator } from '../schemaAccumulator'
 import { strVal, stmtRangeOf } from '../astHelpers'
+import { PgNode } from '../pgAst'
 import type { DdlNonFatalError } from '../buildFromDdl'
 
 // ── CREATE TYPE ... AS ENUM ───────────────────────────────────────────────────
@@ -81,7 +82,7 @@ export function handleCreateCompositeType(
 
   const coldeflist = (stmt.coldeflist ?? []) as Node[]
   const fields: Column[] = coldeflist.map(n => {
-    const cd = (n as Record<string, unknown>)['ColumnDef'] as ColumnDef | undefined
+    const cd = (n as Record<string, unknown>)[PgNode.ColumnDef] as ColumnDef | undefined
     if (!cd) return { name: 'unknown' } as Column
     const colName = cd.colname ?? 'unknown'
     const tn = cd.typeName as TypeName | undefined
@@ -138,14 +139,14 @@ export function handleCreateRangeType(
   const rangeParams: Record<string, string> = {}
 
   for (const p of params) {
-    const de = (p as Record<string, unknown>)['DefElem'] as Record<string, unknown> | undefined
+    const de = (p as Record<string, unknown>)[PgNode.DefElem] as Record<string, unknown> | undefined
     if (!de) continue
     const name = de['defname'] as string | undefined
     const arg = de['arg'] as Node | undefined
     if (!name || !arg) continue
 
     if (name === 'subtype') {
-      const tn = (arg as Record<string, unknown>)['TypeName'] as { names?: Node[] } | undefined
+      const tn = (arg as Record<string, unknown>)[PgNode.TypeName] as { names?: Node[] } | undefined
       if (tn?.names) {
         subtype = strVal(tn.names[tn.names.length - 1])
       }

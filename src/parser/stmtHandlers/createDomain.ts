@@ -18,6 +18,7 @@ import { newCheck, unsupportedType } from '../../factories'
 import { mapTypeName } from '../typeMapper'
 import type { SchemaAccumulator } from '../schemaAccumulator'
 import { strVal, stmtRangeOf, nodeToExpr, exprToString } from '../astHelpers'
+import { PgNode, PgConstrType } from '../pgAst'
 import type { DdlNonFatalError } from '../buildFromDdl'
 import { PgObjectKind } from '../../postgres.constants'
 
@@ -58,18 +59,18 @@ export function handleCreateDomain(
 
   const constraints = (stmt.constraints ?? []) as Node[]
   for (const conNode of constraints) {
-    const con = (conNode as Record<string, unknown>)['Constraint'] as Constraint | undefined
+    const con = (conNode as Record<string, unknown>)[PgNode.Constraint] as Constraint | undefined
     if (!con) continue
     const ct = con.contype as string | undefined
 
-    if (ct === 'CONSTR_NOTNULL') {
+    if (ct === PgConstrType.NotNull) {
       nullability = false
-    } else if (ct === 'CONSTR_NULL') {
+    } else if (ct === PgConstrType.Null) {
       nullability = true
-    } else if (ct === 'CONSTR_DEFAULT') {
+    } else if (ct === PgConstrType.Default) {
       const re = con.raw_expr as Node | undefined
       if (re) defaultExpr = nodeToExpr(re)
-    } else if (ct === 'CONSTR_CHECK') {
+    } else if (ct === PgConstrType.Check) {
       const re = con.raw_expr as Node | undefined
       const expr = re ? exprToString(re) : ''
       checks.push(newCheck(expr, con.conname))
