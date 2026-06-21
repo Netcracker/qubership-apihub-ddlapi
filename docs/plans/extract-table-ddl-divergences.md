@@ -79,11 +79,12 @@ implementation, with rationale. Newest entries appended under each task.
 - **`ownedByTable` precomputed once.** A single `tableKey → owned descriptors` map (indexes, triggers,
   table/column/constraint comments, and index-comments resolved via `indexKey → table`) is built in
   `prepareDdlExtractor` so each `extractTable` is a cheap map lookup.
-- **Inline-constraint index comments deferred.** `COMMENT ON INDEX` is attributed to a table only for
-  standalone `CREATE INDEX` names. An index implicitly created by a *named inline* `UNIQUE`/`PRIMARY
-  KEY` constraint is not yet mapped to its table (would need constraint-name extraction from the
-  CREATE TABLE AST). Rare; revisit if needed. Standalone CREATE INDEX comments — the common case —
-  work.
+- **Inline-constraint index comments — RESOLVED (was deferred).** Initially `COMMENT ON INDEX` was
+  attributed to a table only for standalone `CREATE INDEX`. Per code review, the table descriptor now
+  also carries `constraintIndexNames` (names of *named* `UNIQUE` constraints, inline column +
+  table-level), and `buildOwnedByTable` maps `schema.constraintName → table`. PRIMARY KEY constraint
+  names remain excluded, matching buildFromDdl (which does not register PK indexes for COMMENT
+  lookup).
 
 ## Task 6 — Type-dependency closure
 
@@ -96,8 +97,12 @@ implementation, with rationale. Newest entries appended under each task.
 - **`TypeRef` carries `{ key, rawName }`.** Each reference keeps both its resolved `schema.type` key
   (for the closure) and the as-written name (for Task 8's `UnresolvedTypeReference` / denylist), so
   Task 8 need not re-walk the AST.
-- **Type refs collected only for table + type-definition statements.** Indexes/triggers/comments are
-  not walked for type deps.
+- **Type refs collected for table, type, index, AND trigger statements.** (Revised per code review —
+  initially only table + type-definition statements were walked, which missed types used in an
+  included index's expression/predicate or a trigger's `WHEN` clause, e.g.
+  `CREATE INDEX idx ON t ((s::mood))`. The closure now enqueues type refs for every *owned* statement
+  too, so such types are pulled in.) The `owningSchemaOf` helper scopes bare names by the statement's
+  table (index/trigger) or own (table/type) schema. Comments carry no type refs.
 
 ## Task 7 — LIKE closure
 

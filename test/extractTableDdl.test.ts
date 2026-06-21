@@ -124,6 +124,26 @@ CREATE TABLE audit.events (id int);
       expect(sql).toContain("COMMENT ON INDEX idx_a IS 'speedy'")
     })
 
+    test('COMMENT ON INDEX for a named UNIQUE constraint index is attributed to its table', async () => {
+      const ddl = [
+        'CREATE TABLE t (id int, code text, CONSTRAINT uq_code UNIQUE (code));',
+        "COMMENT ON INDEX uq_code IS 'unique codes';",
+      ].join('\n')
+      const ex = await prepareDdlExtractor(ddl)
+      const sql = ex.extractTable({ schema: 'public', name: 't' })!.sql
+      expect(sql).toContain("COMMENT ON INDEX uq_code IS 'unique codes'")
+    })
+
+    test('COMMENT ON INDEX for an inline named UNIQUE column constraint is attributed', async () => {
+      const ddl = [
+        'CREATE TABLE t (id int, code text CONSTRAINT uq_code UNIQUE);',
+        "COMMENT ON INDEX uq_code IS 'unique codes';",
+      ].join('\n')
+      const ex = await prepareDdlExtractor(ddl)
+      const sql = ex.extractTable({ schema: 'public', name: 't' })!.sql
+      expect(sql).toContain("COMMENT ON INDEX uq_code IS 'unique codes'")
+    })
+
     test('non-contiguous selection preserves source order with a normalized seam', async () => {
       const ddl = [
         'CREATE TABLE a (id int);',
@@ -231,6 +251,44 @@ CREATE TABLE audit.events (id int);
         ].join('\n'),
         't',
       )
+      expect(sql).toContain('CREATE TYPE mood AS ENUM')
+    })
+
+    test('a type used only in an included index expression is pulled in', async () => {
+      const sql = await extract(
+        [
+          "CREATE TYPE mood AS ENUM ('a', 'b');",
+          'CREATE TABLE t (id int, s text);',
+          'CREATE INDEX idx ON t ((s::mood));',
+        ].join('\n'),
+        't',
+      )
+      expect(sql).toContain('CREATE INDEX idx')
+      expect(sql).toContain('CREATE TYPE mood AS ENUM')
+    })
+
+    test('a type used only in an included index WHERE predicate is pulled in', async () => {
+      const sql = await extract(
+        [
+          "CREATE TYPE mood AS ENUM ('a', 'b');",
+          'CREATE TABLE t (id int, s text);',
+          "CREATE INDEX idx ON t (id) WHERE (s::mood = 'a');",
+        ].join('\n'),
+        't',
+      )
+      expect(sql).toContain('CREATE TYPE mood AS ENUM')
+    })
+
+    test('a type used only in an included trigger WHEN clause is pulled in', async () => {
+      const sql = await extract(
+        [
+          "CREATE TYPE mood AS ENUM ('a', 'b');",
+          'CREATE TABLE t (id int, s text);',
+          "CREATE TRIGGER trg BEFORE UPDATE ON t FOR EACH ROW WHEN (NEW.s::mood = 'a') EXECUTE FUNCTION f();",
+        ].join('\n'),
+        't',
+      )
+      expect(sql).toContain('CREATE TRIGGER trg')
       expect(sql).toContain('CREATE TYPE mood AS ENUM')
     })
 

@@ -101,6 +101,24 @@ function schemaOf(key: string): string {
   return key.slice(0, key.indexOf('.'))
 }
 
+/**
+ * Schema that scopes bare type names referenced by a statement (matching
+ * buildFromDdl's referenceResolver): a table/type by its own schema, an
+ * index/trigger by its target table's schema. Comments carry no type refs.
+ */
+function owningSchemaOf(d: StatementDescriptor): string | undefined {
+  switch (d.defines.kind) {
+    case 'table':
+    case 'type':
+      return schemaOf(d.defines.key)
+    case 'index':
+    case 'trigger':
+      return schemaOf(d.defines.targetTable)
+    default:
+      return undefined
+  }
+}
+
 /** A user-type reference found in a statement's AST. */
 export interface TypeRef {
   /** Resolved "schema.type" key (bare names scoped to the owning schema — no public fallback). */
@@ -207,11 +225,17 @@ function droppedRelationKeys(body: Record<string, unknown>, defaultSchema: strin
 
 /** Builds the table-ownership map: every statement directly owned by a table. */
 function buildOwnedByTable(descriptors: readonly StatementDescriptor[]): Map<string, StatementDescriptor[]> {
-  // index key (schema.indexName) → owning table, from standalone CREATE INDEX.
+  // index key (schema.indexName) → owning table, from standalone CREATE INDEX and
+  // from named UNIQUE constraints that implicitly create an index.
   const indexKeyToTable = new Map<string, string>()
   for (const d of descriptors) {
     if (d.defines.kind === 'index' && d.defines.indexKey) {
       indexKeyToTable.set(d.defines.indexKey, d.defines.targetTable)
+    } else if (d.defines.kind === 'table' && d.defines.constraintIndexNames) {
+      const schema = schemaOf(d.defines.key)
+      for (const name of d.defines.constraintIndexNames) {
+        indexKeyToTable.set(`${schema}.${name}`, d.defines.key)
+      }
     }
   }
 
@@ -287,7 +311,10 @@ function selectForTable(index: DdlIndex, rootKey: string): Selection {
       selected.add(tableStmt)
       includedTables.add(tk)
 
-      for (const d of index.ownedByTable.get(tk) ?? []) selected.add(d.rawIndex)
+      for (const d of index.ownedByTable.get(tk) ?? []) {
+        selected.add(d.rawIndex)
+        enqueueTypeRefs(d.rawIndex) // index expressions / trigger WHEN casts may reference types
+      }
       enqueueTypeRefs(tableStmt)
       // LIKE sources are pulled in as full closures (their own indexes/types/…),
       // since the table is unbuildable without them. seenTables guards cycles.
@@ -467,13 +494,15 @@ export async function prepareDdlExtractor(ddl: string): Promise<DdlExtractor> {
     }
   }
 
-  // Collect the user-type references in each table and type-definition statement
-  // (whole-AST TypeName walk — declared positions and expression casts).
+  // Collect the user-type references in each table, type-definition, index, and
+  // trigger statement (whole-AST TypeName walk — declared positions and expression
+  // casts, including index expressions/predicates and trigger WHEN clauses).
   const typeRefsByStmt = new Map<number, TypeRef[]>()
   for (const d of descriptors) {
-    if (d.defines.kind !== 'table' && d.defines.kind !== 'type') continue
+    const owningSchema = owningSchemaOf(d)
+    if (owningSchema === undefined) continue // comments carry no type refs
     const refs: TypeRef[] = []
-    collectTypeRefs(rawStmts[d.rawIndex]!.stmt, schemaOf(d.defines.key), refs)
+    collectTypeRefs(rawStmts[d.rawIndex]!.stmt, owningSchema, refs)
     if (refs.length > 0) typeRefsByStmt.set(d.rawIndex, refs)
   }
 

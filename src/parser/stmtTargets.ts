@@ -38,7 +38,14 @@ export type CommentTarget =
 
 /** The object a supported statement introduces (or, for comments, targets). */
 export type DefinedObject =
-  | { kind: 'table'; key: string; likeSources?: string[]; foreignKeys?: ForeignKeyRef[] }
+  | {
+    kind: 'table'
+    key: string
+    likeSources?: string[]
+    foreignKeys?: ForeignKeyRef[]
+    /** Names of indexes implicitly created by named UNIQUE constraints (for COMMENT ON INDEX). */
+    constraintIndexNames?: string[]
+  }
   | { kind: 'index'; indexKey?: string; targetTable: string }
   | { kind: 'trigger'; targetTable: string }
   | { kind: 'type'; key: string }
@@ -97,6 +104,31 @@ function foreignKeysOf(stmt: CreateStmt, defaultSchema: string): ForeignKeyRef[]
       }
     } else if (e['Constraint']) {
       push(e['Constraint'] as Constraint)
+    }
+  }
+  return out
+}
+
+/**
+ * Names of indexes implicitly created by *named* UNIQUE constraints (inline column
+ * and table-level). Mirrors buildFromDdl, which registers these for COMMENT ON INDEX
+ * lookup. PRIMARY KEY constraint names are intentionally excluded — buildFromDdl does
+ * not register them either.
+ */
+function constraintIndexNamesOf(stmt: CreateStmt): string[] {
+  const out: string[] = []
+  const pushUnique = (con: Constraint): void => {
+    if (con.contype === 'CONSTR_UNIQUE' && con.conname) out.push(con.conname)
+  }
+  for (const elt of (stmt.tableElts ?? []) as Node[]) {
+    const e = elt as Record<string, unknown>
+    if (e['ColumnDef']) {
+      for (const conNode of ((e['ColumnDef'] as ColumnDef).constraints ?? []) as Node[]) {
+        const con = (conNode as Record<string, unknown>)['Constraint'] as Constraint | undefined
+        if (con) pushUnique(con)
+      }
+    } else if (e['Constraint']) {
+      pushUnique(e['Constraint'] as Constraint)
     }
   }
   return out
@@ -172,6 +204,7 @@ export function describeStatement(
       if (!rel?.relname || stmt!.partbound) return undefined // PARTITION OF — out of scope
       const likeSources = likeSourcesOf(stmt!, defaultSchema)
       const foreignKeys = foreignKeysOf(stmt!, defaultSchema)
+      const constraintIndexNames = constraintIndexNamesOf(stmt!)
       return {
         ...base,
         defines: {
@@ -179,6 +212,7 @@ export function describeStatement(
           key: `${rel.schemaname ?? defaultSchema}.${rel.relname}`,
           ...(likeSources.length > 0 && { likeSources }),
           ...(foreignKeys.length > 0 && { foreignKeys }),
+          ...(constraintIndexNames.length > 0 && { constraintIndexNames }),
         },
       }
     }

@@ -60,6 +60,23 @@ describe('describeStatement', () => {
       const d = await describeOne('CREATE TABLE orders (id int);')
       expect(d.range).toBeDefined()
     })
+
+    test('named UNIQUE constraints surface as constraintIndexNames (table-level + inline)', async () => {
+      const d = await describeOne(
+        'CREATE TABLE t (id int, code text CONSTRAINT uq_code UNIQUE, CONSTRAINT uq_pair UNIQUE (id, code));',
+      )
+      expect((d.defines as { constraintIndexNames?: string[] }).constraintIndexNames)
+        .toEqual(['uq_code', 'uq_pair'])
+    })
+
+    test('unnamed UNIQUE / PRIMARY KEY constraints produce no constraintIndexNames', async () => {
+      // Auto-generated index names are not tracked (parity with buildFromDdl), and
+      // PRIMARY KEY names are deliberately excluded.
+      const d = await describeOne(
+        'CREATE TABLE t (id int CONSTRAINT pk PRIMARY KEY, code text UNIQUE);',
+      )
+      expect((d.defines as { constraintIndexNames?: string[] }).constraintIndexNames).toBeUndefined()
+    })
   })
 
   describe('COMMENT targets', () => {
