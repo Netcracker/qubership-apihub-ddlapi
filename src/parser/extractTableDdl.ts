@@ -9,13 +9,14 @@
 // the bare CREATE TABLE statement only. Relevance closure (indexes, triggers,
 // comments, types, LIKE) and warnings are layered on in later tasks.
 
-import type { RawStmt, TypeName } from '@pgsql/types'
+import type { Node, RawStmt, RangeVar, TypeName } from '@pgsql/types'
 import { PG_DEFAULT_SCHEMA } from '../postgres.constants'
 import type { SourceRange } from './positions'
 import { parseStatements, stmtTypeName, stmtBody } from './pgParser'
 import { SUPPORTED_STMT_TYPE_SET } from './supportedStatements'
 import { describeStatement, type StatementDescriptor, type ForeignKeyRef } from './stmtTargets'
-import { stmtRangeOf } from './astHelpers'
+import { stmtRangeOf, unwrapNode } from './astHelpers'
+import { PgNode } from './pgAst'
 import { rawTypeName } from './typeMapper'
 import { isKnownTypeName } from './knownTypeNames'
 import { DdlParseError } from './buildFromDdl'
@@ -202,8 +203,7 @@ interface DroppedStatement {
 
 /** As-written RangeVar → qualified key; accepts the wrapped or direct node form. */
 function rangeVarKey(node: unknown, defaultSchema: string): string | undefined {
-  const rv = ((node as Record<string, unknown> | undefined)?.['RangeVar'] ?? node) as
-    { relname?: string; schemaname?: string } | undefined
+  const rv = unwrapNode(node as Node | undefined, PgNode.RangeVar) ?? (node as RangeVar | undefined)
   if (!rv?.relname) return undefined
   return `${rv.schemaname ?? defaultSchema}.${rv.relname}`
 }

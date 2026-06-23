@@ -18,6 +18,23 @@ import { literal, rawExpr } from '../factories'
 import type { SourceRange } from './positions'
 
 /**
+ * The payload type of a wrapped pgsql-parser node for key K.
+ * `Node` is a union of single-key wrappers (`{ ColumnDef: ColumnDef } | …`), so
+ * NodeValue<'ColumnDef'> resolves to ColumnDef.
+ */
+export type NodeValue<K extends string> = Extract<Node, Record<K, unknown>> extends Record<K, infer V> ? V : never
+
+/**
+ * Unwraps a wrapped pgsql-parser node `{ Key: Payload }` to its typed payload, or
+ * undefined when the node is absent or of a different kind. The lone unavoidable
+ * cast (the AST arrives as a `Node` union that cannot be indexed generically) is
+ * centralised here so call sites stay fully typed.
+ */
+export function unwrapNode<K extends string>(node: Node | undefined, key: K): NodeValue<K> | undefined {
+  return (node as Record<string, unknown> | undefined)?.[key] as NodeValue<K> | undefined
+}
+
+/**
  * Extracts the string value (sval) from a pgsql-parser String node.
  * Returns undefined for any other node shape.
  *

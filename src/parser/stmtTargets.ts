@@ -9,9 +9,9 @@
 import type {
   RawStmt, Node, CreateStmt, IndexStmt, CommentStmt, CreateDomainStmt,
   CreateEnumStmt, CompositeTypeStmt, CreateRangeStmt, CreateTrigStmt,
-  ColumnDef, Constraint,
+  Constraint,
 } from '@pgsql/types'
-import { strVal, stmtRangeOf } from './astHelpers'
+import { strVal, stmtRangeOf, unwrapNode } from './astHelpers'
 import { stmtTypeName, stmtBody } from './pgParser'
 import { PgNode, PgConstrType, PgCommentObject } from './pgAst'
 import type { SupportedStmtType } from './supportedStatements'
@@ -63,7 +63,7 @@ export interface StatementDescriptor {
 
 /** Extracts String svals from a { List: { items: [...] } } node (COMMENT object lists). */
 function listStrings(node: Node | undefined): string[] {
-  const list = (node as Record<string, unknown> | undefined)?.[PgNode.List] as { items?: Node[] } | undefined
+  const list = unwrapNode(node, PgNode.List)
   if (!list?.items) return []
   return list.items.map(n => strVal(n) ?? '').filter(Boolean)
 }
@@ -96,15 +96,15 @@ function foreignKeysOf(stmt: CreateStmt, defaultSchema: string): ForeignKeyRef[]
     out.push({ refTableKey: `${pk.schemaname ?? defaultSchema}.${pk.relname}`, ...(con.conname && { symbol: con.conname }) })
   }
   for (const elt of (stmt.tableElts ?? []) as Node[]) {
-    const e = elt as Record<string, unknown>
-    if (e[PgNode.ColumnDef]) {
-      const cd = e[PgNode.ColumnDef] as ColumnDef
-      for (const conNode of (cd.constraints ?? []) as Node[]) {
-        const con = (conNode as Record<string, unknown>)[PgNode.Constraint] as Constraint | undefined
+    const cd = unwrapNode(elt, PgNode.ColumnDef)
+    if (cd) {
+      for (const conNode of cd.constraints ?? []) {
+        const con = unwrapNode(conNode, PgNode.Constraint)
         if (con) push(con)
       }
-    } else if (e[PgNode.Constraint]) {
-      push(e[PgNode.Constraint] as Constraint)
+    } else {
+      const con = unwrapNode(elt, PgNode.Constraint)
+      if (con) push(con)
     }
   }
   return out
@@ -122,14 +122,15 @@ function constraintIndexNamesOf(stmt: CreateStmt): string[] {
     if (con.contype === PgConstrType.Unique && con.conname) out.push(con.conname)
   }
   for (const elt of (stmt.tableElts ?? []) as Node[]) {
-    const e = elt as Record<string, unknown>
-    if (e[PgNode.ColumnDef]) {
-      for (const conNode of ((e[PgNode.ColumnDef] as ColumnDef).constraints ?? []) as Node[]) {
-        const con = (conNode as Record<string, unknown>)[PgNode.Constraint] as Constraint | undefined
+    const cd = unwrapNode(elt, PgNode.ColumnDef)
+    if (cd) {
+      for (const conNode of cd.constraints ?? []) {
+        const con = unwrapNode(conNode, PgNode.Constraint)
         if (con) pushUnique(con)
       }
-    } else if (e[PgNode.Constraint]) {
-      pushUnique(e[PgNode.Constraint] as Constraint)
+    } else {
+      const con = unwrapNode(elt, PgNode.Constraint)
+      if (con) pushUnique(con)
     }
   }
   return out
@@ -139,8 +140,7 @@ function constraintIndexNamesOf(stmt: CreateStmt): string[] {
 function likeSourcesOf(stmt: CreateStmt, defaultSchema: string): string[] {
   const out: string[] = []
   for (const elt of (stmt.tableElts ?? []) as Node[]) {
-    const like = (elt as Record<string, unknown>)[PgNode.TableLikeClause] as
-      { relation?: { relname?: string; schemaname?: string } } | undefined
+    const like = unwrapNode(elt, PgNode.TableLikeClause)
     if (like?.relation?.relname) {
       out.push(`${like.relation.schemaname ?? defaultSchema}.${like.relation.relname}`)
     }
@@ -151,29 +151,29 @@ function likeSourcesOf(stmt: CreateStmt, defaultSchema: string): string[] {
 function commentTarget(stmt: CommentStmt, defaultSchema: string): CommentTarget {
   switch (stmt.objtype) {
     case PgCommentObject.Table: {
-      const key = keyFromParts(listStrings(stmt.object as Node | undefined), defaultSchema)
+      const key = keyFromParts(listStrings(stmt.object), defaultSchema)
       return key ? { kind: 'table', tableKey: key } : { kind: 'other' }
     }
     case PgCommentObject.Column: {
-      const parts = listStrings(stmt.object as Node | undefined)
+      const parts = listStrings(stmt.object)
       if (parts.length < 2) return { kind: 'other' }
       const column = parts[parts.length - 1]!
       const tableKey = keyFromParts(parts.slice(0, -1), defaultSchema)
       return tableKey ? { kind: 'column', tableKey, column } : { kind: 'other' }
     }
     case PgCommentObject.TableConstraint: {
-      const parts = listStrings(stmt.object as Node | undefined)
+      const parts = listStrings(stmt.object)
       if (parts.length < 2) return { kind: 'other' }
       const constraint = parts[parts.length - 1]!
       const tableKey = keyFromParts(parts.slice(0, -1), defaultSchema)
       return tableKey ? { kind: 'tableConstraint', tableKey, constraint } : { kind: 'other' }
     }
     case PgCommentObject.Index: {
-      const key = keyFromParts(listStrings(stmt.object as Node | undefined), defaultSchema)
+      const key = keyFromParts(listStrings(stmt.object), defaultSchema)
       return key ? { kind: 'index', indexKey: key } : { kind: 'other' }
     }
     case PgCommentObject.Type: {
-      const tn = (stmt.object as Record<string, unknown> | undefined)?.[PgNode.TypeName] as { names?: Node[] } | undefined
+      const tn = unwrapNode(stmt.object, PgNode.TypeName)
       if (!tn?.names || tn.names.length === 0) return { kind: 'other' }
       const key = keyFromNameNodes(tn.names, defaultSchema)
       return key ? { kind: 'type', typeKey: key } : { kind: 'other' }

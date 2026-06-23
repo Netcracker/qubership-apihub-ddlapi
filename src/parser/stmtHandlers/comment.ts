@@ -6,7 +6,7 @@ import type { Attr } from '../../attrs'
 import { comment as makeComment } from '../../factories'
 import { replaceOrAppendAttr, removeAttr } from '../../utils'
 import type { SchemaAccumulator } from '../schemaAccumulator'
-import { strVal, stmtRangeOf } from '../astHelpers'
+import { strVal, stmtRangeOf, unwrapNode } from '../astHelpers'
 import { PgNode, PgCommentObject } from '../pgAst'
 import type { DdlNonFatalError } from '../buildFromDdl'
 
@@ -14,8 +14,7 @@ import type { DdlNonFatalError } from '../buildFromDdl'
  * Extracts a list of String sval tokens from a { List: { items: [...] } } node.
  */
 function listStrings(node: Node | undefined): string[] {
-  if (!node) return []
-  const list = (node as Record<string, unknown>)[PgNode.List] as { items?: Node[] } | undefined
+  const list = unwrapNode(node, PgNode.List)
   if (!list?.items) return []
   return list.items.map(n => strVal(n) ?? '').filter(Boolean)
 }
@@ -46,7 +45,7 @@ export function handleComment(
 
   switch (objtype) {
     case PgCommentObject.Table: {
-      const parts = listStrings(stmt.object as Node | undefined)
+      const parts = listStrings(stmt.object)
       if (parts.length === 0) return
       const tableName = parts[parts.length - 1]!
       const schemaName = parts.length > 1 ? parts[parts.length - 2]! : defaultSchemaName
@@ -66,7 +65,7 @@ export function handleComment(
 
     case PgCommentObject.Column: {
       // parts: [schema?, table, column]
-      const parts = listStrings(stmt.object as Node | undefined)
+      const parts = listStrings(stmt.object)
       if (parts.length < 2) return
       const colName = parts[parts.length - 1]!
       const tableName = parts[parts.length - 2]!
@@ -87,7 +86,7 @@ export function handleComment(
 
     case PgCommentObject.Index: {
       // parts: [schema?, indexName]
-      const parts = listStrings(stmt.object as Node | undefined)
+      const parts = listStrings(stmt.object)
       if (parts.length === 0) return
       const indexName = parts[parts.length - 1]!
       const schemaName = parts.length > 1 ? parts[parts.length - 2]! : defaultSchemaName
@@ -107,8 +106,7 @@ export function handleComment(
 
     case PgCommentObject.Type: {
       // object is a TypeName node; extract schema + name from its names list
-      const typeNameNode = stmt.object as Record<string, unknown> | undefined
-      const tn = typeNameNode?.[PgNode.TypeName] as { names?: Node[] } | undefined
+      const tn = unwrapNode(stmt.object, PgNode.TypeName)
       if (!tn?.names || tn.names.length === 0) return
       const names = tn.names
       const typeName = strVal(names[names.length - 1])
@@ -130,7 +128,7 @@ export function handleComment(
 
     case PgCommentObject.Schema: {
       // object is a bare String node holding the schema name (not a List).
-      const schemaName = strVal(stmt.object as Node | undefined)
+      const schemaName = strVal(stmt.object)
       if (!schemaName) return
       const schema = acc.getSchema(schemaName)
       if (!schema) {
@@ -148,7 +146,7 @@ export function handleComment(
     case PgCommentObject.TableConstraint: {
       // parts: [schema?, tableName, constraintName]
       // pgsql-parser: List items = [tableName String, constraintName String]
-      const parts = listStrings(stmt.object as Node | undefined)
+      const parts = listStrings(stmt.object)
       if (parts.length < 2) return
       const constraintName = parts[parts.length - 1]!
       const tableName = parts[parts.length - 2]!

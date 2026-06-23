@@ -13,7 +13,7 @@ import {
 } from '../../factories'
 import type { SchemaAccumulator, PendingFK, PendingIndexPart } from '../schemaAccumulator'
 import { mapTypeName } from '../typeMapper'
-import { strVal, stmtRangeOf, nodeToExpr, exprToString } from '../astHelpers'
+import { strVal, stmtRangeOf, nodeToExpr, exprToString, unwrapNode } from '../astHelpers'
 import { PgNode, PgConstrType } from '../pgAst'
 import type { DdlNonFatalError } from '../buildFromDdl'
 
@@ -24,15 +24,15 @@ function constIval(node: Node): number | undefined {
   // integer 0 (e.g. START WITH 0) arrives with the inner field dropped. The
   // wrapper's presence already proves an integer node, so a missing inner ⇒ 0.
   // A_Const form — used in column defaults, typmods, etc.
-  const c = (node as Record<string, unknown>)[PgNode.A_Const] as Record<string, unknown> | undefined
+  const c = unwrapNode(node, PgNode.A_Const)
   if (c && 'ival' in c) {
-    const iv = (c['ival'] as Record<string, unknown>)['ival']
+    const iv = c.ival?.ival
     return typeof iv === 'number' ? iv : 0
   }
   // Integer form — used in DefElem args (e.g. sequence options START WITH, INCREMENT BY)
-  const intNode = (node as Record<string, unknown>)[PgNode.Integer] as Record<string, unknown> | undefined
+  const intNode = unwrapNode(node, PgNode.Integer)
   if (intNode) {
-    const iv = intNode['ival']
+    const iv = intNode.ival
     return typeof iv === 'number' ? iv : 0
   }
   return undefined
@@ -86,7 +86,7 @@ function buildColumn(
   const constraints = cd.constraints ?? []
 
   for (const conNode of constraints) {
-    const con = (conNode as Record<string, unknown>)[PgNode.Constraint] as Constraint | undefined
+    const con = unwrapNode(conNode, PgNode.Constraint)
     if (!con) continue
     const ct = con.contype as string | undefined
 
@@ -95,10 +95,10 @@ function buildColumn(
     } else if (ct === PgConstrType.Null) {
       nullability = true
     } else if (ct === PgConstrType.Default) {
-      const re = con.raw_expr as Node | undefined
+      const re = con.raw_expr
       if (re) defaultExpr = nodeToExpr(re)
     } else if (ct === PgConstrType.Check) {
-      const re = con.raw_expr as Node | undefined
+      const re = con.raw_expr
       const expr = re ? exprToString(re) : ''
       attrs.push(newCheck(expr, con.conname))
     } else if (ct === PgConstrType.PrimaryKey) {
@@ -131,23 +131,23 @@ function buildColumn(
         onDelete,
       })
     } else if (ct === PgConstrType.Generated) {
-      const re = con.raw_expr as Node | undefined
-      const genWhen = (con as Record<string, unknown>)['generated_when'] as string | undefined
+      const re = con.raw_expr
+      const genWhen = con.generated_when
       if (re) {
         attrs.push(generatedExpr(exprToString(re), PgGeneratedExprType.Stored))
       }
     } else if (ct === PgConstrType.Identity) {
-      const genWhen = (con as Record<string, unknown>)['generated_when'] as string | undefined
+      const genWhen = con.generated_when
       const generation = genWhen === 'a' ? PgIdentityGeneration.Always : PgIdentityGeneration.ByDefault
-      const options = (con as Record<string, unknown>)['options'] as Node[] | undefined
+      const options = con.options
       let seqStart: number | undefined
       let seqIncrement: number | undefined
       if (options) {
         for (const opt of options) {
-          const de = (opt as Record<string, unknown>)[PgNode.DefElem] as Record<string, unknown> | undefined
+          const de = unwrapNode(opt, PgNode.DefElem)
           if (!de) continue
-          const name = de['defname'] as string | undefined
-          const arg = de['arg'] as Node | undefined
+          const name = de.defname
+          const arg = de.arg
           const v = arg ? constIval(arg) : undefined
           if (name === 'start' && v !== undefined) seqStart = v
           if (name === 'increment' && v !== undefined) seqIncrement = v
@@ -166,7 +166,7 @@ function buildColumn(
 
   // COLLATE clause
   if (cd.collClause) {
-    const collname = ((cd.collClause as Record<string, unknown>)['collname'] as Node[] | undefined)?.[0]
+    const collname = cd.collClause.collname?.[0]
     const v = collname ? strVal(collname) : undefined
     if (v) attrs.push(collation(v))
   }
@@ -234,13 +234,15 @@ export function handleCreateTable(
   let likeSources: TableLikeClause[] = []
 
   for (const elt of tableElts) {
-    const e = elt as Record<string, unknown>
-    if (e[PgNode.ColumnDef]) {
-      columnDefs.push(e[PgNode.ColumnDef] as ColumnDef)
-    } else if (e[PgNode.Constraint]) {
-      tableConstraints.push(e[PgNode.Constraint] as Constraint)
-    } else if (e[PgNode.TableLikeClause]) {
-      likeSources.push(e[PgNode.TableLikeClause] as TableLikeClause)
+    const columnDef = unwrapNode(elt, PgNode.ColumnDef)
+    const constraint = unwrapNode(elt, PgNode.Constraint)
+    const likeClause = unwrapNode(elt, PgNode.TableLikeClause)
+    if (columnDef) {
+      columnDefs.push(columnDef)
+    } else if (constraint) {
+      tableConstraints.push(constraint)
+    } else if (likeClause) {
+      likeSources.push(likeClause)
     }
   }
 
@@ -335,7 +337,7 @@ export function handleCreateTable(
         onDelete,
       })
     } else if (ct === PgConstrType.Check) {
-      const re = con.raw_expr as Node | undefined
+      const re = con.raw_expr
       const expr = re ? exprToString(re) : ''
       tableAttrs.push(newCheck(expr, con.conname))
     } else if (ct === PgConstrType.Exclusion) {
@@ -356,17 +358,16 @@ export function handleCreateTable(
 
   // Table-level storage/partition/inherit attrs
   if (stmt.partspec) {
-    const ps = stmt.partspec as Record<string, unknown>
-    const strategy = ps['strategy'] as string | undefined
+    const strategy = stmt.partspec.strategy
     const partitionType = strategy === 'PARTITION_STRATEGY_RANGE' ? PgPartitionStrategy.Range
       : strategy === 'PARTITION_STRATEGY_LIST' ? PgPartitionStrategy.List
         : PgPartitionStrategy.Hash
-    const params = (ps['partParams'] as Node[] | undefined) ?? []
+    const params = stmt.partspec.partParams ?? []
     const parts = params.map(p => {
-      const pe = (p as Record<string, unknown>)[PgNode.PartitionElem] as Record<string, unknown> | undefined
+      const pe = unwrapNode(p, PgNode.PartitionElem)
       if (!pe) return undefined
-      if (pe['name']) return { type: 'column', name: pe['name'] }
-      if (pe['expr']) return { type: 'expr', expr: exprToString(pe['expr'] as Node) }
+      if (pe.name) return { type: 'column', name: pe.name }
+      if (pe.expr) return { type: 'expr', expr: exprToString(pe.expr) }
       return undefined
     }).filter(Boolean)
     // `type` is a descriptive rename of Atlas Go `T`; see ddlapi-authoring.
@@ -375,8 +376,7 @@ export function handleCreateTable(
 
   if (stmt.inhRelations && stmt.inhRelations.length > 0) {
     const parents = stmt.inhRelations.map(r => {
-      const rv = (r as Record<string, unknown>)[PgNode.RangeVar] as Record<string, unknown> | undefined
-      return rv?.['relname'] as string | undefined
+      return unwrapNode(r, PgNode.RangeVar)?.relname
     }).filter(Boolean) as string[]
     tableAttrs.push({ kind: PgAttrKind.Inherits, parents } as Attr)
   }
@@ -384,10 +384,10 @@ export function handleCreateTable(
   if (stmt.options && stmt.options.length > 0) {
     const params: Record<string, string> = {}
     for (const opt of stmt.options) {
-      const de = (opt as Record<string, unknown>)[PgNode.DefElem] as Record<string, unknown> | undefined
+      const de = unwrapNode(opt, PgNode.DefElem)
       if (!de) continue
-      const name = de['defname'] as string | undefined
-      const arg = de['arg'] as Node | undefined
+      const name = de.defname
+      const arg = de.arg
       if (name && arg) params[name] = deparseSync(arg as Record<string, unknown>)
     }
     if (Object.keys(params).length > 0) {
