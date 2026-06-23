@@ -46,6 +46,13 @@ Rules when extending a union:
   but carries `ObjectKind.NamedDefault` as its `kind` (there is no
   `ExprKind.NamedDefault`). The `test/types.test.ts` exhaustiveness check
   asserts these cross-group equalities — keep them aligned.
+- **`assertNever` exhaustiveness must discriminate on a value *typed as the union*.**
+  Write `const k: SupportedStmtType = x; switch (k) { … default: assertNever(k) }`.
+  Switching on a cast *expression* (`switch (x as SupportedStmtType)` with
+  `assertNever(x as never)`) compiles but enforces nothing — the residual in `default`
+  is never checked, so a missing case is not caught. This guards the `buildFromDdl`
+  dispatch and the `SUPPORTED_STMT_TYPES` list (built from `PgNode` in
+  `supportedStatements.ts`).
 
 ## Extend via the escape hatch, never the core union
 
@@ -151,6 +158,35 @@ Registry keys are normalised qualified names: `"schema.table"`,
   and `SourceRange` from `positions.ts` is private. Never let `@pgsql/types`
   or `pgsql-parser` types appear in an exported signature.
 
+## Reading the AST — prefer typed access over `Record<string, unknown>`
+
+`@pgsql/types` types the libpg_query AST well; lean on it instead of casting to
+`Record<string, unknown>`.
+
+- **`Node` is a union of single-key wrappers** (`{ ColumnDef: ColumnDef } | { Constraint: Constraint } | …`),
+  so it cannot be indexed generically. Unwrap a wrapped node to its typed payload
+  with **`unwrapNode(node, key)`** (`astHelpers.ts`), which returns `NodeValue<K>`;
+  **`stmtBody(rawStmt, key)`** is the same for a statement body. Both replace the old
+  `(x as Record<string, unknown>)['Key']` pattern and keep call sites cast-free.
+- **AST string literals live in `pgAst.ts`:** `PgNode` (node-type keys such as
+  `ColumnDef`, `Constraint`, `DefElem`, `RangeVar`), `PgConstrType` (`Constraint.contype`),
+  `PgCommentObject` (`CommentStmt.objtype`). Use them for bracket access and comparison —
+  a raw-string typo silently returns `undefined` / never matches, whereas a constant is
+  checked against the typed field by `tsc`. (That check is what proved `ConstrType` has
+  **no** `CONSTR_COLLATION` — COLLATE is a `ColumnDef.collClause`, not a constraint.)
+- **Reserve `Record<string, unknown>`** for genuine whole-tree traversal of unknown nodes
+  and for `deparseSync(node as Record<string, unknown>)` (its loose parameter). Don't reach
+  for it to read a *typed* field: `RangeVar` has `relname`/`schemaname`; list fields
+  (`tableElts`, `constraints`, `typeName`, `params`, …) are `Node[]`; `Constraint` carries
+  `contype`/`generated_when`/`options`/`pktable`. `(x ?? []) as Node[]` and
+  `con.pktable as { relname?; schemaname? }` are redundant — drop them.
+- **`TypeName` appears in two shapes.** In a generic Node slot (a range subtype, the
+  `COMMENT ON TYPE` object) it is wrapped `{ TypeName: payload }`; under a `typeName`
+  **field** (`ColumnDef.typeName`, `TypeCast.typeName`) it is the payload **directly**, with
+  no wrapper. Unwrapping only by the `TypeName` key misses the direct form. When walking the
+  tree generically, detect a `TypeName` payload structurally — it has a `names: Node[]` array
+  and a `typemod` field.
+
 ## Reading scalars from the AST — protobuf zero-omission
 
 `pgsql-parser` hands back libpg_query's protobuf as plain JSON, and protobuf
@@ -167,14 +203,21 @@ type, so distinguish "wrapper absent" (field not set) from "wrapper present,
 inner omitted" (value **is** the zero) and supply the zero yourself:
 
 ```typescript
-// integer literal — nodeToExpr (astHelpers.ts)
+// integer literal — nodeToExpr (astHelpers.ts), low-level Record access
 if (c['ival']) return literal(String((c['ival'] as Record<string, unknown>)['ival'] ?? 0))
 
-// integer scalar — typeMapper.ival / createTable.constIval
+// integer scalar — typeMapper.ival, low-level Record access
 if (!c || !('ival' in c)) return undefined          // not an integer const
 const iv = (c['ival'] as Record<string, unknown>)['ival']
 return typeof iv === 'number' ? iv : 0               // inner omitted ⇒ 0
 ```
+
+The low-level extractors (`strVal`, `nodeToExpr`, `typeMapper.ival`) keep this raw
+`Record` form on purpose. Everywhere else, the same lesson holds through the typed
+`unwrapNode` helper — e.g. `createTable.constIval` does
+`const c = unwrapNode(node, PgNode.A_Const); const iv = c?.ival?.ival` — because
+`c.ival` is a present `Integer` whose inner `ival` is *still* omitted for zero, the
+`typeof iv === 'number' ? iv : 0` guard stays.
 
 The same trap covers `boolval` (omitted ⇒ `false`). `fval` is the exception —
 it is stored as a non-empty string even for `0.0`, so it is never omitted.
