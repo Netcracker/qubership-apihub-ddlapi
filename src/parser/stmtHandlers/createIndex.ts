@@ -1,7 +1,7 @@
 // Private module — handles IndexStmt (CREATE [UNIQUE] INDEX).
 
 import { deparseSync } from 'pgsql-parser'
-import type { IndexStmt, RawStmt, Node } from '@pgsql/types'
+import type { IndexStmt, RawStmt } from '@pgsql/types'
 import { ObjectKind, DdlErrorKind } from '../../constants'
 import { PgAttrKind } from '../../postgres.constants'
 import type { Index, IndexPart } from '../../schema'
@@ -45,7 +45,7 @@ export function handleCreateIndex(
   }
 
   // Build index parts
-  const indexParams = (stmt.indexParams ?? []) as Node[]
+  const indexParams = stmt.indexParams ?? []
   const parts: IndexPart[] = []
   const pendingParts: Array<{ part: IndexPart; columnKey: string }> = []
 
@@ -117,7 +117,7 @@ export function handleCreateIndex(
   }
 
   // INCLUDE columns
-  const includingParams = (stmt.indexIncludingParams ?? []) as Node[]
+  const includingParams = stmt.indexIncludingParams ?? []
   if (includingParams.length > 0) {
     const includeColNames = includingParams.map(n => {
       const elem = unwrapNode(n, PgNode.IndexElem)
@@ -131,7 +131,7 @@ export function handleCreateIndex(
   // WITH storage params
   if (stmt.options && stmt.options.length > 0) {
     const params: Record<string, string> = {}
-    for (const opt of stmt.options as Node[]) {
+    for (const opt of stmt.options) {
       const de = unwrapNode(opt, PgNode.DefElem)
       if (!de) continue
       const name = de.defname

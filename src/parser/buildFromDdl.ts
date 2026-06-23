@@ -1,18 +1,14 @@
 // Public entry point for DDL parsing.
 // This file is re-exported from src/index.ts.
 
-import type {
-  CreateStmt, IndexStmt, CommentStmt, CreateDomainStmt,
-  CreateEnumStmt, CompositeTypeStmt, CreateRangeStmt, CreateTrigStmt,
-} from '@pgsql/types'
 import { DdlErrorKind } from '../constants'
 import { PG_DEFAULT_SCHEMA } from '../postgres.constants'
 import { DDLAPI_VERSION } from '../schema'
 import type { SourceRange } from './positions'
-import { parseStatements, stmtTypeName, stmtBody } from './pgParser'
+import { parseStatements, stmtTypeName } from './pgParser'
 import { SUPPORTED_STMT_TYPE_SET, type SupportedStmtType } from './supportedStatements'
 import { PgNode } from './pgAst'
-import { stmtRangeOf } from './astHelpers'
+import { stmtRangeOf, stmtBody } from './astHelpers'
 import { SchemaAccumulator } from './schemaAccumulator'
 import { handleCreateTable } from './stmtHandlers/createTable'
 import { handleCreateIndex } from './stmtHandlers/createIndex'
@@ -183,42 +179,42 @@ export async function buildFromDdl(ddl: string, options?: BuildFromDdlOptions): 
     const supported: SupportedStmtType = typeName as SupportedStmtType
     switch (supported) {
       case PgNode.CreateStmt: {
-        const stmt = stmtBody(rawStmt, PgNode.CreateStmt) as CreateStmt | undefined
+        const stmt = stmtBody(rawStmt, PgNode.CreateStmt)
         if (stmt) handleCreateTable(stmt, rawStmt, PG_DEFAULT_SCHEMA, acc, onError)
         break
       }
       case PgNode.IndexStmt: {
-        const stmt = stmtBody(rawStmt, PgNode.IndexStmt) as IndexStmt | undefined
+        const stmt = stmtBody(rawStmt, PgNode.IndexStmt)
         if (stmt) handleCreateIndex(stmt, rawStmt, PG_DEFAULT_SCHEMA, acc, onError)
         break
       }
       case PgNode.CommentStmt: {
-        const stmt = stmtBody(rawStmt, PgNode.CommentStmt) as CommentStmt | undefined
+        const stmt = stmtBody(rawStmt, PgNode.CommentStmt)
         if (stmt) handleComment(stmt, rawStmt, PG_DEFAULT_SCHEMA, acc, onError)
         break
       }
       case PgNode.CreateDomainStmt: {
-        const stmt = stmtBody(rawStmt, PgNode.CreateDomainStmt) as CreateDomainStmt | undefined
+        const stmt = stmtBody(rawStmt, PgNode.CreateDomainStmt)
         if (stmt) handleCreateDomain(stmt, rawStmt, PG_DEFAULT_SCHEMA, acc, onError)
         break
       }
       case PgNode.CreateEnumStmt: {
-        const stmt = stmtBody(rawStmt, PgNode.CreateEnumStmt) as CreateEnumStmt | undefined
+        const stmt = stmtBody(rawStmt, PgNode.CreateEnumStmt)
         if (stmt) handleCreateEnum(stmt, rawStmt, PG_DEFAULT_SCHEMA, acc, onError)
         break
       }
       case PgNode.CompositeTypeStmt: {
-        const stmt = stmtBody(rawStmt, PgNode.CompositeTypeStmt) as CompositeTypeStmt | undefined
+        const stmt = stmtBody(rawStmt, PgNode.CompositeTypeStmt)
         if (stmt) handleCreateCompositeType(stmt, rawStmt, PG_DEFAULT_SCHEMA, acc, onError)
         break
       }
       case PgNode.CreateRangeStmt: {
-        const stmt = stmtBody(rawStmt, PgNode.CreateRangeStmt) as CreateRangeStmt | undefined
+        const stmt = stmtBody(rawStmt, PgNode.CreateRangeStmt)
         if (stmt) handleCreateRangeType(stmt, rawStmt, PG_DEFAULT_SCHEMA, acc, onError)
         break
       }
       case PgNode.CreateTrigStmt: {
-        const stmt = stmtBody(rawStmt, PgNode.CreateTrigStmt) as CreateTrigStmt | undefined
+        const stmt = stmtBody(rawStmt, PgNode.CreateTrigStmt)
         if (stmt) handleCreateTrigger(stmt, rawStmt, PG_DEFAULT_SCHEMA, acc, onError)
         break
       }

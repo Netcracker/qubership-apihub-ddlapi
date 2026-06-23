@@ -39,13 +39,3 @@ export function stmtTypeName(rawStmt: RawStmt): string {
   if (stmt == null) return ''
   return Object.keys(stmt)[0] ?? ''
 }
-
-/**
- * Extracts the statement body for a known statement type key.
- * Returns unknown because Node is a union type (keyof Node = never in TypeScript);
- * callers cast the result to the expected concrete type.
- */
-export function stmtBody(rawStmt: RawStmt, key: string): unknown {
-  const stmt = rawStmt.stmt as Record<string, unknown> | undefined
-  return stmt?.[key]
-}

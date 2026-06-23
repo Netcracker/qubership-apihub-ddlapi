@@ -1,6 +1,6 @@
 // Private module — handles CREATE TYPE (enum, composite, range).
 
-import type { CreateEnumStmt, CompositeTypeStmt, CreateRangeStmt, RawStmt, Node } from '@pgsql/types'
+import type { CreateEnumStmt, CompositeTypeStmt, CreateRangeStmt, RawStmt } from '@pgsql/types'
 import type { Column, SchemaObject } from '../../schema'
 import type { SchemaType } from '../../types'
 import { DdlErrorKind } from '../../constants'
@@ -21,7 +21,7 @@ export function handleCreateEnum(
   acc: SchemaAccumulator,
   onError: (e: DdlNonFatalError) => void,
 ): void {
-  const typeNameParts = (stmt.typeName ?? []) as Node[]
+  const typeNameParts = stmt.typeName ?? []
   const typeName = strVal(typeNameParts[typeNameParts.length - 1])
   if (!typeName) return
   const schemaName =
@@ -43,7 +43,7 @@ export function handleCreateEnum(
     return
   }
 
-  const vals = (stmt.vals ?? []) as Node[]
+  const vals = stmt.vals ?? []
   const values = vals.map(v => strVal(v) ?? '').filter(Boolean)
 
   const et = enumType(values, { type: typeName })
@@ -64,7 +64,7 @@ export function handleCreateCompositeType(
   if (!typevar) return
 
   const typeName = typevar.relname ?? 'unknown'
-  const schemaName = (typevar as { schemaname?: string }).schemaname ?? defaultSchemaName
+  const schemaName = typevar.schemaname ?? defaultSchemaName
   const qualifiedName = `${schemaName}.${typeName}`
 
   // Duplicate check
@@ -80,7 +80,7 @@ export function handleCreateCompositeType(
     return
   }
 
-  const coldeflist = (stmt.coldeflist ?? []) as Node[]
+  const coldeflist = stmt.coldeflist ?? []
   const fields: Column[] = coldeflist.map(n => {
     const cd = unwrapNode(n, PgNode.ColumnDef)
     if (!cd) return { name: 'unknown' } as Column
@@ -111,7 +111,7 @@ export function handleCreateRangeType(
   acc: SchemaAccumulator,
   onError: (e: DdlNonFatalError) => void,
 ): void {
-  const typeNameParts = (stmt.typeName ?? []) as Node[]
+  const typeNameParts = stmt.typeName ?? []
   const typeName = strVal(typeNameParts[typeNameParts.length - 1])
   if (!typeName) return
   const schemaName =
@@ -134,7 +134,7 @@ export function handleCreateRangeType(
   }
 
   // Extract range params (subtype and others)
-  const params = (stmt.params ?? []) as Node[]
+  const params = stmt.params ?? []
   let subtype: string | undefined
   const rangeParams: Record<string, string> = {}
 

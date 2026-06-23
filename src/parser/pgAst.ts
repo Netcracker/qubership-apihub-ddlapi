@@ -42,7 +42,6 @@ export const PgConstrType = {
   ForeignKey: 'CONSTR_FOREIGN',
   Generated: 'CONSTR_GENERATED',
   Identity: 'CONSTR_IDENTITY',
-  Collation: 'CONSTR_COLLATION',
   Exclusion: 'CONSTR_EXCLUSION',
 } as const
 

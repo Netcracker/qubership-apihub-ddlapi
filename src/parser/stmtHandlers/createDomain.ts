@@ -8,7 +8,7 @@
 // references a domain resolve to the shared 'Domain' instance rather than
 // staying as a raw UnsupportedType.
 
-import type { CreateDomainStmt, RawStmt, Node } from '@pgsql/types'
+import type { CreateDomainStmt, RawStmt } from '@pgsql/types'
 import type { SchemaObject } from '../../schema'
 import type { SchemaType } from '../../types'
 import type { Check } from '../../attrs'
@@ -29,7 +29,7 @@ export function handleCreateDomain(
   acc: SchemaAccumulator,
   onError: (e: DdlNonFatalError) => void,
 ): void {
-  const domainNameParts = (stmt.domainname ?? []) as Node[]
+  const domainNameParts = stmt.domainname ?? []
   const domainName = strVal(domainNameParts[domainNameParts.length - 1])
   if (!domainName) return
   const schemaName =
@@ -57,11 +57,11 @@ export function handleCreateDomain(
   let defaultExpr: Expr | undefined
   const checks: Check[] = []
 
-  const constraints = (stmt.constraints ?? []) as Node[]
+  const constraints = stmt.constraints ?? []
   for (const conNode of constraints) {
     const con = unwrapNode(conNode, PgNode.Constraint)
     if (!con) continue
-    const ct = con.contype as string | undefined
+    const ct = con.contype
 
     if (ct === PgConstrType.NotNull) {
       nullability = false

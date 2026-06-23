@@ -6,13 +6,9 @@
 // "schema.typeOrIndex". Identifier strings come from strVal() (already folded by
 // the parser's lexer), so keys match PostgreSQL name resolution.
 
-import type {
-  RawStmt, Node, CreateStmt, IndexStmt, CommentStmt, CreateDomainStmt,
-  CreateEnumStmt, CompositeTypeStmt, CreateRangeStmt, CreateTrigStmt,
-  Constraint,
-} from '@pgsql/types'
-import { strVal, stmtRangeOf, unwrapNode } from './astHelpers'
-import { stmtTypeName, stmtBody } from './pgParser'
+import type { RawStmt, Node, CreateStmt, CommentStmt, Constraint } from '@pgsql/types'
+import { strVal, stmtRangeOf, unwrapNode, stmtBody } from './astHelpers'
+import { stmtTypeName } from './pgParser'
 import { PgNode, PgConstrType, PgCommentObject } from './pgAst'
 import type { SupportedStmtType } from './supportedStatements'
 import type { SourceRange } from './positions'
@@ -91,11 +87,11 @@ function foreignKeysOf(stmt: CreateStmt, defaultSchema: string): ForeignKeyRef[]
   const out: ForeignKeyRef[] = []
   const push = (con: Constraint): void => {
     if (con.contype !== PgConstrType.ForeignKey) return
-    const pk = con.pktable as { relname?: string; schemaname?: string } | undefined
+    const pk = con.pktable
     if (!pk?.relname) return
     out.push({ refTableKey: `${pk.schemaname ?? defaultSchema}.${pk.relname}`, ...(con.conname && { symbol: con.conname }) })
   }
-  for (const elt of (stmt.tableElts ?? []) as Node[]) {
+  for (const elt of stmt.tableElts ?? []) {
     const cd = unwrapNode(elt, PgNode.ColumnDef)
     if (cd) {
       for (const conNode of cd.constraints ?? []) {
@@ -121,7 +117,7 @@ function constraintIndexNamesOf(stmt: CreateStmt): string[] {
   const pushUnique = (con: Constraint): void => {
     if (con.contype === PgConstrType.Unique && con.conname) out.push(con.conname)
   }
-  for (const elt of (stmt.tableElts ?? []) as Node[]) {
+  for (const elt of stmt.tableElts ?? []) {
     const cd = unwrapNode(elt, PgNode.ColumnDef)
     if (cd) {
       for (const conNode of cd.constraints ?? []) {
@@ -139,7 +135,7 @@ function constraintIndexNamesOf(stmt: CreateStmt): string[] {
 /** Extracts the qualified keys of every LIKE source table in a CREATE TABLE (LIKE U …). */
 function likeSourcesOf(stmt: CreateStmt, defaultSchema: string): string[] {
   const out: string[] = []
-  for (const elt of (stmt.tableElts ?? []) as Node[]) {
+  for (const elt of stmt.tableElts ?? []) {
     const like = unwrapNode(elt, PgNode.TableLikeClause)
     if (like?.relation?.relname) {
       out.push(`${like.relation.schemaname ?? defaultSchema}.${like.relation.relname}`)
@@ -200,7 +196,7 @@ export function describeStatement(
 
   switch (type) {
     case PgNode.CreateStmt: {
-      const stmt = stmtBody(rawStmt, PgNode.CreateStmt) as CreateStmt | undefined
+      const stmt = stmtBody(rawStmt, PgNode.CreateStmt)
       const rel = stmt?.relation
       if (!rel?.relname || stmt!.partbound) return undefined // PARTITION OF — out of scope
       const likeSources = likeSourcesOf(stmt!, defaultSchema)
@@ -218,7 +214,7 @@ export function describeStatement(
       }
     }
     case PgNode.IndexStmt: {
-      const stmt = stmtBody(rawStmt, PgNode.IndexStmt) as IndexStmt | undefined
+      const stmt = stmtBody(rawStmt, PgNode.IndexStmt)
       const rel = stmt?.relation
       if (!rel?.relname) return undefined
       const schema = rel.schemaname ?? defaultSchema
@@ -233,36 +229,36 @@ export function describeStatement(
       }
     }
     case PgNode.CreateTrigStmt: {
-      const stmt = stmtBody(rawStmt, PgNode.CreateTrigStmt) as CreateTrigStmt | undefined
+      const stmt = stmtBody(rawStmt, PgNode.CreateTrigStmt)
       const rel = stmt?.relation
       if (!rel?.relname) return undefined
-      return { ...base, defines: { kind: 'trigger', targetTable: `${(rel as { schemaname?: string }).schemaname ?? defaultSchema}.${rel.relname}` } }
+      return { ...base, defines: { kind: 'trigger', targetTable: `${rel.schemaname ?? defaultSchema}.${rel.relname}` } }
     }
     case PgNode.CommentStmt: {
-      const stmt = stmtBody(rawStmt, PgNode.CommentStmt) as CommentStmt | undefined
+      const stmt = stmtBody(rawStmt, PgNode.CommentStmt)
       if (!stmt) return undefined
       return { ...base, defines: { kind: 'comment', target: commentTarget(stmt, defaultSchema) } }
     }
     case PgNode.CreateEnumStmt: {
-      const stmt = stmtBody(rawStmt, PgNode.CreateEnumStmt) as CreateEnumStmt | undefined
-      const key = stmt ? keyFromNameNodes((stmt.typeName ?? []) as Node[], defaultSchema) : undefined
+      const stmt = stmtBody(rawStmt, PgNode.CreateEnumStmt)
+      const key = stmt ? keyFromNameNodes(stmt.typeName ?? [], defaultSchema) : undefined
       return key ? { ...base, defines: { kind: 'type', key } } : undefined
     }
     case PgNode.CreateRangeStmt: {
-      const stmt = stmtBody(rawStmt, PgNode.CreateRangeStmt) as CreateRangeStmt | undefined
-      const key = stmt ? keyFromNameNodes((stmt.typeName ?? []) as Node[], defaultSchema) : undefined
+      const stmt = stmtBody(rawStmt, PgNode.CreateRangeStmt)
+      const key = stmt ? keyFromNameNodes(stmt.typeName ?? [], defaultSchema) : undefined
       return key ? { ...base, defines: { kind: 'type', key } } : undefined
     }
     case PgNode.CreateDomainStmt: {
-      const stmt = stmtBody(rawStmt, PgNode.CreateDomainStmt) as CreateDomainStmt | undefined
-      const key = stmt ? keyFromNameNodes((stmt.domainname ?? []) as Node[], defaultSchema) : undefined
+      const stmt = stmtBody(rawStmt, PgNode.CreateDomainStmt)
+      const key = stmt ? keyFromNameNodes(stmt.domainname ?? [], defaultSchema) : undefined
       return key ? { ...base, defines: { kind: 'type', key } } : undefined
     }
     case PgNode.CompositeTypeStmt: {
-      const stmt = stmtBody(rawStmt, PgNode.CompositeTypeStmt) as CompositeTypeStmt | undefined
+      const stmt = stmtBody(rawStmt, PgNode.CompositeTypeStmt)
       const tv = stmt?.typevar
       if (!tv?.relname) return undefined
-      return { ...base, defines: { kind: 'type', key: `${(tv as { schemaname?: string }).schemaname ?? defaultSchema}.${tv.relname}` } }
+      return { ...base, defines: { kind: 'type', key: `${tv.schemaname ?? defaultSchema}.${tv.relname}` } }
     }
     default:
       return undefined

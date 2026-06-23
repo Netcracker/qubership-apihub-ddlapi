@@ -35,6 +35,15 @@ export function unwrapNode<K extends string>(node: Node | undefined, key: K): No
 }
 
 /**
+ * Extracts the typed statement body for a statement type key, e.g.
+ * stmtBody(rawStmt, 'CreateStmt') returns a CreateStmt. Just unwrapNode applied to
+ * the RawStmt's wrapped statement node, so call sites need no cast.
+ */
+export function stmtBody<K extends string>(rawStmt: RawStmt, key: K): NodeValue<K> | undefined {
+  return unwrapNode(rawStmt.stmt, key)
+}
+
+/**
  * Extracts the string value (sval) from a pgsql-parser String node.
  * Returns undefined for any other node shape.
  *

@@ -88,7 +88,7 @@ function buildColumn(
   for (const conNode of constraints) {
     const con = unwrapNode(conNode, PgNode.Constraint)
     if (!con) continue
-    const ct = con.contype as string | undefined
+    const ct = con.contype
 
     if (ct === PgConstrType.NotNull) {
       nullability = false
@@ -113,14 +113,14 @@ function buildColumn(
       pendingIndexParts.push({ part: idx.parts![0] as IndexPart, columnKey: `${schemaName}.${tableName}.${colName}` })
       tableInlineIndexes.push(idx)
     } else if (ct === PgConstrType.ForeignKey) {
-      const pktable = con.pktable as { relname?: string; schemaname?: string } | undefined
+      const pktable = con.pktable
       const refTable = pktable?.relname ?? ''
       const refSchema = pktable?.schemaname ?? schemaName
-      const fkAttrs = (con.fk_attrs as Node[] | undefined) ?? []
-      const pkAttrs = (con.pk_attrs as Node[] | undefined) ?? []
+      const fkAttrs = con.fk_attrs ?? []
+      const pkAttrs = con.pk_attrs ?? []
       const refColNames = pkAttrs.map(n => strVal(n) ?? '').filter(Boolean)
-      const onDelete = con.fk_del_action ? fkAction(con.fk_del_action as string) : undefined
-      const onUpdate = con.fk_upd_action ? fkAction(con.fk_upd_action as string) : undefined
+      const onDelete = con.fk_del_action ? fkAction(con.fk_del_action) : undefined
+      const onUpdate = con.fk_upd_action ? fkAction(con.fk_upd_action) : undefined
       // Build FK with empty columns[] — will add this column after creation
       pendingFKInfos.push({
         symbol: con.conname,
@@ -159,9 +159,9 @@ function buildColumn(
         ...(seqStart !== undefined && { seqStart }),
         ...(seqIncrement !== undefined && { seqIncrement }),
       } as Attr)
-    } else if (ct === PgConstrType.Collation) {
-      // handled below via collClause
     }
+    // COLLATE is not a constraint (no CONSTR_COLLATION in pgsql-parser) — it is
+    // handled via cd.collClause below.
   }
 
   // COLLATE clause
@@ -279,10 +279,10 @@ export function handleCreateTable(
   const tableObjects: SchemaObject[] = []
 
   for (const con of tableConstraints) {
-    const ct = con.contype as string | undefined
+    const ct = con.contype
 
     if (ct === PgConstrType.PrimaryKey) {
-      const keys = (con.keys as Node[] | undefined) ?? []
+      const keys = con.keys ?? []
       const pkColNames = keys.map(n => strVal(n) ?? '').filter(Boolean)
       const pkCols = pkColNames.map(name => columns.find(c => c.name === name)).filter(Boolean) as Column[]
       tablePrimaryKey = newPrimaryKey(pkCols)
@@ -292,9 +292,9 @@ export function handleCreateTable(
         tablePrimaryKey = namedPk
       }
     } else if (ct === PgConstrType.Unique) {
-      const keys = (con.keys as Node[] | undefined) ?? []
+      const keys = con.keys ?? []
       const colNames = keys.map(n => strVal(n) ?? '').filter(Boolean)
-      const including = (con.including as Node[] | undefined) ?? []
+      const including = con.including ?? []
       const includeColNames = including.map(n => strVal(n) ?? '').filter(Boolean)
       const attrs: Attr[] = []
       if (includeColNames.length > 0) {
@@ -318,15 +318,15 @@ export function handleCreateTable(
       }
       tableIndexes.push(idx)
     } else if (ct === PgConstrType.ForeignKey) {
-      const pktable = con.pktable as { relname?: string; schemaname?: string } | undefined
+      const pktable = con.pktable
       const refTable = pktable?.relname ?? ''
       const refSchema = pktable?.schemaname ?? tableSchema
-      const fkAttrs = (con.fk_attrs as Node[] | undefined) ?? []
-      const pkAttrs = (con.pk_attrs as Node[] | undefined) ?? []
+      const fkAttrs = con.fk_attrs ?? []
+      const pkAttrs = con.pk_attrs ?? []
       const fkColNames = fkAttrs.map(n => strVal(n) ?? '').filter(Boolean)
       const refColNames = pkAttrs.map(n => strVal(n) ?? '').filter(Boolean)
-      const onDelete = con.fk_del_action ? fkAction(con.fk_del_action as string) : undefined
-      const onUpdate = con.fk_upd_action ? fkAction(con.fk_upd_action as string) : undefined
+      const onDelete = con.fk_del_action ? fkAction(con.fk_del_action) : undefined
+      const onUpdate = con.fk_upd_action ? fkAction(con.fk_upd_action) : undefined
       const fkCols = fkColNames.map(name => columns.find(c => c.name === name)).filter(Boolean) as Column[]
       tableFKInfos.push({
         symbol: con.conname,
@@ -450,7 +450,7 @@ export function handleCreateTable(
   // Handle LIKE
   if (likeSources.length > 0) {
     for (const like of likeSources) {
-      const likeRel = like.relation as { relname?: string; schemaname?: string } | undefined
+      const likeRel = like.relation
       if (!likeRel) continue
       const srcTable = likeRel.relname ?? ''
       const srcSchema = likeRel.schemaname ?? tableSchema
