@@ -4,7 +4,7 @@ import { prepareDdlExtractor, DdlParseError } from '../src'
 const sliceOf = async (ddl: string, name: string, schema = 'public'): Promise<string> =>
   (await prepareDdlExtractor(ddl)).extractTable({ schema, name })!.sql
 
-describe('prepareDdlExtractor (skeleton)', () => {
+describe('prepareDdlExtractor', () => {
   describe('parse failures', () => {
     test('throws DdlParseError on invalid SQL', async () => {
       await expect(prepareDdlExtractor('CREATE TABLE (')).rejects.toThrow(DdlParseError)

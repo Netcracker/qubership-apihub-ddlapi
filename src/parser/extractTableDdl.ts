@@ -4,10 +4,6 @@
 // Two-phase: prepareDdlExtractor() parses once and builds a reusable index;
 // the returned DdlExtractor.extractTable() is cheap and synchronous, designed
 // for a consumer iterating over every table in a multi-table DDL.
-//
-// NOTE (Task 2 skeleton): this currently supports table discovery and slicing
-// the bare CREATE TABLE statement only. Relevance closure (indexes, triggers,
-// comments, types, LIKE) and warnings are layered on in later tasks.
 
 import type { Node, RawStmt, RangeVar, TypeName } from '@pgsql/types'
 import { PG_DEFAULT_SCHEMA } from '../postgres.constants'
@@ -272,7 +268,7 @@ function buildOwnedByTable(descriptors: readonly StatementDescriptor[]): Map<str
           const tableKey = indexKeyToTable.get(t.indexKey)
           if (tableKey) add(tableKey, d)
         }
-        // CommentTargetKind.Type is handled by the type closure (Task 6); Other is ignored.
+        // CommentTargetKind.Type is handled by the type closure; Other is ignored.
         break
       }
       // Table definitions are seeded directly; nothing to own here.
