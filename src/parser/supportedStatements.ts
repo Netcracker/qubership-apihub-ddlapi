@@ -7,16 +7,18 @@
 // exhaustive over SupportedStmtType (assertNever), so adding a name here fails to
 // compile until a handler case exists.
 
+import { PgNode } from './pgAst'
+
 /** pgsql-parser top-level statement type-name keys that ddlapi supports. */
 export const SUPPORTED_STMT_TYPES = [
-  'CreateStmt',        // CREATE TABLE
-  'IndexStmt',         // CREATE [UNIQUE] INDEX
-  'CommentStmt',       // COMMENT ON ...
-  'CreateDomainStmt',  // CREATE DOMAIN
-  'CreateEnumStmt',    // CREATE TYPE ... AS ENUM
-  'CompositeTypeStmt', // CREATE TYPE ... AS (...)
-  'CreateRangeStmt',   // CREATE TYPE ... AS RANGE
-  'CreateTrigStmt',    // CREATE TRIGGER
+  PgNode.CreateStmt,        // CREATE TABLE
+  PgNode.IndexStmt,         // CREATE [UNIQUE] INDEX
+  PgNode.CommentStmt,       // COMMENT ON ...
+  PgNode.CreateDomainStmt,  // CREATE DOMAIN
+  PgNode.CreateEnumStmt,    // CREATE TYPE ... AS ENUM
+  PgNode.CompositeTypeStmt, // CREATE TYPE ... AS (...)
+  PgNode.CreateRangeStmt,   // CREATE TYPE ... AS RANGE
+  PgNode.CreateTrigStmt,    // CREATE TRIGGER
 ] as const
 
 export type SupportedStmtType = typeof SUPPORTED_STMT_TYPES[number]

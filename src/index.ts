@@ -21,6 +21,7 @@ export {
 } from './parser/buildFromDdl'
 export {
   prepareDdlExtractor,
+  DdlExtractorWarningKind,
   type DdlExtractor,
   type TableRef,
   type TableDdlSlice,

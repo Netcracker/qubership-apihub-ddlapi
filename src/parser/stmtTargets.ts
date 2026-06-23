@@ -15,6 +15,26 @@ import type { SourceRange } from './positions'
 
 // ── descriptor types ─────────────────────────────────────────────────────────
 
+/** Discriminant values for CommentTarget. */
+export const CommentTargetKind = {
+  Table: 'table',
+  Column: 'column',
+  TableConstraint: 'tableConstraint',
+  Index: 'index',
+  Type: 'type',
+  /** COMMENT targets buildFromDdl ignores (schema, function, …) — never table-relevant. */
+  Other: 'other',
+} as const
+
+/** Discriminant values for DefinedObject. */
+export const DefinedObjectKind = {
+  Table: 'table',
+  Index: 'index',
+  Trigger: 'trigger',
+  Type: 'type',
+  Comment: 'comment',
+} as const
+
 /** A foreign-key reference declared in a CREATE TABLE. */
 export interface ForeignKeyRef {
   /** Qualified key of the referenced table. */
@@ -25,28 +45,27 @@ export interface ForeignKeyRef {
 
 /** What a COMMENT ON statement is about (only the targets buildFromDdl resolves). */
 export type CommentTarget =
-  | { kind: 'table'; tableKey: string }
-  | { kind: 'column'; tableKey: string; column: string }
-  | { kind: 'tableConstraint'; tableKey: string; constraint: string }
-  | { kind: 'index'; indexKey: string }
-  | { kind: 'type'; typeKey: string }
-  /** COMMENT targets buildFromDdl ignores (schema, function, …) — never table-relevant. */
-  | { kind: 'other' }
+  | { kind: typeof CommentTargetKind.Table; tableKey: string }
+  | { kind: typeof CommentTargetKind.Column; tableKey: string; column: string }
+  | { kind: typeof CommentTargetKind.TableConstraint; tableKey: string; constraint: string }
+  | { kind: typeof CommentTargetKind.Index; indexKey: string }
+  | { kind: typeof CommentTargetKind.Type; typeKey: string }
+  | { kind: typeof CommentTargetKind.Other }
 
 /** The object a supported statement introduces (or, for comments, targets). */
 export type DefinedObject =
   | {
-    kind: 'table'
+    kind: typeof DefinedObjectKind.Table
     key: string
     likeSources?: string[]
     foreignKeys?: ForeignKeyRef[]
     /** Names of indexes implicitly created by named UNIQUE constraints (for COMMENT ON INDEX). */
     constraintIndexNames?: string[]
   }
-  | { kind: 'index'; indexKey?: string; targetTable: string }
-  | { kind: 'trigger'; targetTable: string }
-  | { kind: 'type'; key: string }
-  | { kind: 'comment'; target: CommentTarget }
+  | { kind: typeof DefinedObjectKind.Index; indexKey?: string; targetTable: string }
+  | { kind: typeof DefinedObjectKind.Trigger; targetTable: string }
+  | { kind: typeof DefinedObjectKind.Type; key: string }
+  | { kind: typeof DefinedObjectKind.Comment; target: CommentTarget }
 
 export interface StatementDescriptor {
   rawIndex: number
@@ -145,38 +164,39 @@ function likeSourcesOf(stmt: CreateStmt, defaultSchema: string): string[] {
 }
 
 function commentTarget(stmt: CommentStmt, defaultSchema: string): CommentTarget {
+  const other = { kind: CommentTargetKind.Other } as const
   switch (stmt.objtype) {
     case PgCommentObject.Table: {
       const key = keyFromParts(listStrings(stmt.object), defaultSchema)
-      return key ? { kind: 'table', tableKey: key } : { kind: 'other' }
+      return key ? { kind: CommentTargetKind.Table, tableKey: key } : other
     }
     case PgCommentObject.Column: {
       const parts = listStrings(stmt.object)
-      if (parts.length < 2) return { kind: 'other' }
+      if (parts.length < 2) return other
       const column = parts[parts.length - 1]!
       const tableKey = keyFromParts(parts.slice(0, -1), defaultSchema)
-      return tableKey ? { kind: 'column', tableKey, column } : { kind: 'other' }
+      return tableKey ? { kind: CommentTargetKind.Column, tableKey, column } : other
     }
     case PgCommentObject.TableConstraint: {
       const parts = listStrings(stmt.object)
-      if (parts.length < 2) return { kind: 'other' }
+      if (parts.length < 2) return other
       const constraint = parts[parts.length - 1]!
       const tableKey = keyFromParts(parts.slice(0, -1), defaultSchema)
-      return tableKey ? { kind: 'tableConstraint', tableKey, constraint } : { kind: 'other' }
+      return tableKey ? { kind: CommentTargetKind.TableConstraint, tableKey, constraint } : other
     }
     case PgCommentObject.Index: {
       const key = keyFromParts(listStrings(stmt.object), defaultSchema)
-      return key ? { kind: 'index', indexKey: key } : { kind: 'other' }
+      return key ? { kind: CommentTargetKind.Index, indexKey: key } : other
     }
     case PgCommentObject.Type: {
       const tn = unwrapNode(stmt.object, PgNode.TypeName)
-      if (!tn?.names || tn.names.length === 0) return { kind: 'other' }
+      if (!tn?.names || tn.names.length === 0) return other
       const key = keyFromNameNodes(tn.names, defaultSchema)
-      return key ? { kind: 'type', typeKey: key } : { kind: 'other' }
+      return key ? { kind: CommentTargetKind.Type, typeKey: key } : other
     }
     default:
       // OBJECT_SCHEMA, OBJECT_FUNCTION, … — not table-relevant.
-      return { kind: 'other' }
+      return other
   }
 }
 
@@ -205,7 +225,7 @@ export function describeStatement(
       return {
         ...base,
         defines: {
-          kind: 'table',
+          kind: DefinedObjectKind.Table,
           key: `${rel.schemaname ?? defaultSchema}.${rel.relname}`,
           ...(likeSources.length > 0 && { likeSources }),
           ...(foreignKeys.length > 0 && { foreignKeys }),
@@ -222,7 +242,7 @@ export function describeStatement(
       return {
         ...base,
         defines: {
-          kind: 'index',
+          kind: DefinedObjectKind.Index,
           targetTable,
           ...(stmt!.idxname && { indexKey: `${schema}.${stmt!.idxname}` }),
         },
@@ -232,33 +252,33 @@ export function describeStatement(
       const stmt = stmtBody(rawStmt, PgNode.CreateTrigStmt)
       const rel = stmt?.relation
       if (!rel?.relname) return undefined
-      return { ...base, defines: { kind: 'trigger', targetTable: `${rel.schemaname ?? defaultSchema}.${rel.relname}` } }
+      return { ...base, defines: { kind: DefinedObjectKind.Trigger, targetTable: `${rel.schemaname ?? defaultSchema}.${rel.relname}` } }
     }
     case PgNode.CommentStmt: {
       const stmt = stmtBody(rawStmt, PgNode.CommentStmt)
       if (!stmt) return undefined
-      return { ...base, defines: { kind: 'comment', target: commentTarget(stmt, defaultSchema) } }
+      return { ...base, defines: { kind: DefinedObjectKind.Comment, target: commentTarget(stmt, defaultSchema) } }
     }
     case PgNode.CreateEnumStmt: {
       const stmt = stmtBody(rawStmt, PgNode.CreateEnumStmt)
       const key = stmt ? keyFromNameNodes(stmt.typeName ?? [], defaultSchema) : undefined
-      return key ? { ...base, defines: { kind: 'type', key } } : undefined
+      return key ? { ...base, defines: { kind: DefinedObjectKind.Type, key } } : undefined
     }
     case PgNode.CreateRangeStmt: {
       const stmt = stmtBody(rawStmt, PgNode.CreateRangeStmt)
       const key = stmt ? keyFromNameNodes(stmt.typeName ?? [], defaultSchema) : undefined
-      return key ? { ...base, defines: { kind: 'type', key } } : undefined
+      return key ? { ...base, defines: { kind: DefinedObjectKind.Type, key } } : undefined
     }
     case PgNode.CreateDomainStmt: {
       const stmt = stmtBody(rawStmt, PgNode.CreateDomainStmt)
       const key = stmt ? keyFromNameNodes(stmt.domainname ?? [], defaultSchema) : undefined
-      return key ? { ...base, defines: { kind: 'type', key } } : undefined
+      return key ? { ...base, defines: { kind: DefinedObjectKind.Type, key } } : undefined
     }
     case PgNode.CompositeTypeStmt: {
       const stmt = stmtBody(rawStmt, PgNode.CompositeTypeStmt)
       const tv = stmt?.typevar
       if (!tv?.relname) return undefined
-      return { ...base, defines: { kind: 'type', key: `${tv.schemaname ?? defaultSchema}.${tv.relname}` } }
+      return { ...base, defines: { kind: DefinedObjectKind.Type, key: `${tv.schemaname ?? defaultSchema}.${tv.relname}` } }
     }
     default:
       return undefined

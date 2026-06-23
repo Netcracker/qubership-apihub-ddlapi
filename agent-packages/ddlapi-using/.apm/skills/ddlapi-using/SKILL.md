@@ -189,11 +189,24 @@ Contract details that the signatures do not make obvious:
   in the table's own `CREATE TABLE`), but the referenced table is not pulled in — you
   get an `OmittedForeignKeyTarget` warning instead. LIKE sources, by contrast, *are*
   pulled in (the table is unbuildable without them).
-- **`warnings`** is a discriminated union on `kind`: `OmittedForeignKeyTarget`
-  (`refTable`, `symbol?`), `OutOfScopeStatementDropped` (`statementType`, `range`),
-  `UnresolvedTypeReference` (`typeName`), `DuplicateTable` (`table`). Output preserves
-  source order, so a runnable input yields a runnable subset except for these
-  intentionally-omitted references.
+- **`warnings`** is a discriminated union on `kind`, with the values exported as the
+  `DdlExtractorWarningKind` constant group (switch on those, not bare strings):
+  `OmittedForeignKeyTarget` (`refTable`, `symbol?`), `OutOfScopeStatementDropped`
+  (`statementType`, `range`), `UnresolvedTypeReference` (`typeName`), `DuplicateTable`
+  (`table`).
+
+  ```typescript
+  import { DdlExtractorWarningKind } from '@netcracker/qubership-apihub-ddlapi'
+
+  for (const w of slice.warnings) {
+    if (w.kind === DdlExtractorWarningKind.OmittedForeignKeyTarget) {
+      w.refTable // { schema, name } of the omitted FK target
+    }
+  }
+  ```
+
+  Output preserves source order, so a runnable input yields a runnable subset except
+  for these intentionally-omitted references.
 
 ## Referential equality after a build
 

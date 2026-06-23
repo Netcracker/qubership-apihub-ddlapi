@@ -14,7 +14,10 @@ import { PG_DEFAULT_SCHEMA } from '../postgres.constants'
 import type { SourceRange } from './positions'
 import { parseStatements, stmtTypeName } from './pgParser'
 import { SUPPORTED_STMT_TYPE_SET } from './supportedStatements'
-import { describeStatement, type StatementDescriptor, type ForeignKeyRef } from './stmtTargets'
+import {
+  describeStatement, CommentTargetKind, DefinedObjectKind,
+  type StatementDescriptor, type ForeignKeyRef,
+} from './stmtTargets'
 import { stmtRangeOf, unwrapNode, stmtBody } from './astHelpers'
 import { PgNode } from './pgAst'
 import { rawTypeName } from './typeMapper'
@@ -30,16 +33,25 @@ export interface TableRef {
   name: string
 }
 
+/** Discriminant values for DdlExtractorWarning. */
+export const DdlExtractorWarningKind = {
+  /** An FK references a table deliberately not included in the slice. */
+  OmittedForeignKeyTarget: 'OmittedForeignKeyTarget',
+  /** A statement unsupported by buildFromDdl named the table and was dropped. */
+  OutOfScopeStatementDropped: 'OutOfScopeStatementDropped',
+  /** A type reference resolved to nothing and is not a known builtin/extension. */
+  UnresolvedTypeReference: 'UnresolvedTypeReference',
+  /** The table is defined more than once; the first definition is used. */
+  DuplicateTable: 'DuplicateTable',
+} as const
+
 /**
  * Non-fatal note attached to a TableDdlSlice. Payloads carry structured targets
  * (not flattened strings) and a source range wherever one is available.
- *
- * NOTE: the union is part of the stable public surface from the skeleton on;
- * emission of each kind is wired up in the warnings task.
  */
 export type DdlExtractorWarning =
   | {
-    kind: 'OmittedForeignKeyTarget'
+    kind: typeof DdlExtractorWarningKind.OmittedForeignKeyTarget
     /** The FK's referenced table. */
     refTable: TableRef
     /** FK constraint name, when the DDL named it. */
@@ -48,18 +60,18 @@ export type DdlExtractorWarning =
     range?: SourceRange
   }
   | {
-    kind: 'OutOfScopeStatementDropped'
+    kind: typeof DdlExtractorWarningKind.OutOfScopeStatementDropped
     /** AST node type, e.g. 'AlterTableStmt'. */
     statementType: string
     range: SourceRange
   }
   | {
-    kind: 'UnresolvedTypeReference'
+    kind: typeof DdlExtractorWarningKind.UnresolvedTypeReference
     /** As written, possibly schema-qualified, e.g. 'audit.mood' or 'mood'. */
     typeName: string
   }
   | {
-    kind: 'DuplicateTable'
+    kind: typeof DdlExtractorWarningKind.DuplicateTable
     /** The duplicated table identity. */
     table: TableRef
     /** Range of each ignored redefinition, when resolvable. */
@@ -109,11 +121,11 @@ function schemaOf(key: string): string {
  */
 function owningSchemaOf(d: StatementDescriptor): string | undefined {
   switch (d.defines.kind) {
-    case 'table':
-    case 'type':
+    case DefinedObjectKind.Table:
+    case DefinedObjectKind.Type:
       return schemaOf(d.defines.key)
-    case 'index':
-    case 'trigger':
+    case DefinedObjectKind.Index:
+    case DefinedObjectKind.Trigger:
       return schemaOf(d.defines.targetTable)
     default:
       return undefined
@@ -229,9 +241,9 @@ function buildOwnedByTable(descriptors: readonly StatementDescriptor[]): Map<str
   // from named UNIQUE constraints that implicitly create an index.
   const indexKeyToTable = new Map<string, string>()
   for (const d of descriptors) {
-    if (d.defines.kind === 'index' && d.defines.indexKey) {
+    if (d.defines.kind === DefinedObjectKind.Index && d.defines.indexKey) {
       indexKeyToTable.set(d.defines.indexKey, d.defines.targetTable)
-    } else if (d.defines.kind === 'table' && d.defines.constraintIndexNames) {
+    } else if (d.defines.kind === DefinedObjectKind.Table && d.defines.constraintIndexNames) {
       const schema = schemaOf(d.defines.key)
       for (const name of d.defines.constraintIndexNames) {
         indexKeyToTable.set(`${schema}.${name}`, d.defines.key)
@@ -248,22 +260,22 @@ function buildOwnedByTable(descriptors: readonly StatementDescriptor[]): Map<str
 
   for (const d of descriptors) {
     switch (d.defines.kind) {
-      case 'index':
-      case 'trigger':
+      case DefinedObjectKind.Index:
+      case DefinedObjectKind.Trigger:
         add(d.defines.targetTable, d)
         break
-      case 'comment': {
+      case DefinedObjectKind.Comment: {
         const t = d.defines.target
-        if (t.kind === 'table' || t.kind === 'column' || t.kind === 'tableConstraint') {
+        if (t.kind === CommentTargetKind.Table || t.kind === CommentTargetKind.Column || t.kind === CommentTargetKind.TableConstraint) {
           add(t.tableKey, d)
-        } else if (t.kind === 'index') {
+        } else if (t.kind === CommentTargetKind.Index) {
           const tableKey = indexKeyToTable.get(t.indexKey)
           if (tableKey) add(tableKey, d)
         }
-        // t.kind === 'type' is handled by the type closure (Task 6); 'other' is ignored.
+        // CommentTargetKind.Type is handled by the type closure (Task 6); Other is ignored.
         break
       }
-      // 'table' definitions are seeded directly; nothing to own here.
+      // Table definitions are seeded directly; nothing to own here.
     }
   }
   return owned
@@ -354,7 +366,7 @@ function collectWarnings(index: DdlIndex, sel: Selection): DdlExtractorWarning[]
       for (const fk of meta.foreignKeys) {
         if (!sel.includedTables.has(fk.refTableKey)) {
           warnings.push({
-            kind: 'OmittedForeignKeyTarget',
+            kind: DdlExtractorWarningKind.OmittedForeignKeyTarget,
             refTable: refFromKey(fk.refTableKey),
             ...(fk.symbol !== undefined && { symbol: fk.symbol }),
             ...(meta.range && { range: meta.range }),
@@ -363,12 +375,12 @@ function collectWarnings(index: DdlIndex, sel: Selection): DdlExtractorWarning[]
       }
       // Duplicate definitions of this table (first won).
       for (const range of meta.duplicateRanges) {
-        warnings.push({ kind: 'DuplicateTable', table: refFromKey(tk), ...(range && { range }) })
+        warnings.push({ kind: DdlExtractorWarningKind.DuplicateTable, table: refFromKey(tk), ...(range && { range }) })
       }
     }
     // Unsupported statements that named this table and were dropped.
     for (const dropped of index.droppedByTable.get(tk) ?? []) {
-      warnings.push({ kind: 'OutOfScopeStatementDropped', statementType: dropped.statementType, range: dropped.range })
+      warnings.push({ kind: DdlExtractorWarningKind.OutOfScopeStatementDropped, statementType: dropped.statementType, range: dropped.range })
     }
   }
 
@@ -380,7 +392,7 @@ function collectWarnings(index: DdlIndex, sel: Selection): DdlExtractorWarning[]
       if (isKnownTypeName(ref.rawName)) continue
       if (seenUnresolved.has(ref.rawName)) continue
       seenUnresolved.add(ref.rawName)
-      warnings.push({ kind: 'UnresolvedTypeReference', typeName: ref.rawName })
+      warnings.push({ kind: DdlExtractorWarningKind.UnresolvedTypeReference, typeName: ref.rawName })
     }
   }
 
@@ -388,7 +400,7 @@ function collectWarnings(index: DdlIndex, sel: Selection): DdlExtractorWarning[]
 }
 
 class DdlExtractorImpl implements DdlExtractor {
-  constructor(private readonly index: DdlIndex) {}
+  constructor(private readonly index: DdlIndex) { }
 
   tables(): readonly TableRef[] {
     return this.index.tableOrder
@@ -469,7 +481,7 @@ export async function prepareDdlExtractor(ddl: string): Promise<DdlExtractor> {
     const d = describeStatement(rawStmts[i]!, i, PG_DEFAULT_SCHEMA)
     if (!d) continue
     descriptors.push(d)
-    if (d.defines.kind === 'table') {
+    if (d.defines.kind === DefinedObjectKind.Table) {
       if (tableStmtIndex.has(d.defines.key)) {
         // Duplicate — first definition wins; record the ignored redefinition's range.
         tableMeta.get(d.defines.key)?.duplicateRanges.push(d.range)
@@ -484,9 +496,9 @@ export async function prepareDdlExtractor(ddl: string): Promise<DdlExtractor> {
         foreignKeys: d.defines.foreignKeys ?? [],
         duplicateRanges: [],
       })
-    } else if (d.defines.kind === 'type') {
+    } else if (d.defines.kind === DefinedObjectKind.Type) {
       if (!typeStmtIndex.has(d.defines.key)) typeStmtIndex.set(d.defines.key, i) // first wins
-    } else if (d.defines.kind === 'comment' && d.defines.target.kind === 'type') {
+    } else if (d.defines.kind === DefinedObjectKind.Comment && d.defines.target.kind === CommentTargetKind.Type) {
       const tk = d.defines.target.typeKey
       const list = commentsByType.get(tk)
       if (list) list.push(d)
