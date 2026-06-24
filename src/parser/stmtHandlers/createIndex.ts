@@ -34,7 +34,7 @@ export function handleCreateIndex(
     if (acc.indexRegistry.has(indexKey)) {
       onError({
         kind: DdlErrorKind.DuplicateObject,
-        objectKind: 'Index',
+        objectKind: ObjectKind.Index,
         qualifiedName: indexKey,
         message: `Duplicate index: ${indexKey}`,
         ...(range && { range }),

@@ -52,7 +52,7 @@ export function handleCreateTrigger(
     // For INSTEAD OF triggers, the target is a view (not a table).
     // Since CREATE VIEW is out-of-scope, views are never registered — always error.
     // For BEFORE/AFTER triggers on tables, an unregistered table is also an error.
-    const triggerKind = timing === 'INSTEAD OF' ? 'view' : 'table'
+    const triggerKind = timing === PgTriggerTiming.InsteadOf ? 'view' : 'table'
     onError({
       kind: DdlErrorKind.UnresolvedReference,
       target: tableKey,

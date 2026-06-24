@@ -3,7 +3,7 @@
 import type { CreateEnumStmt, CompositeTypeStmt, CreateRangeStmt, RawStmt } from '@pgsql/types'
 import type { Column, SchemaObject } from '../../schema'
 import type { SchemaType } from '../../types'
-import { DdlErrorKind } from '../../constants'
+import { DdlErrorKind, ObjectKind } from '../../constants'
 import { PgObjectKind } from '../../postgres.constants'
 import { enumType, unsupportedType } from '../../factories'
 import { mapTypeName } from '../typeMapper'
@@ -35,7 +35,7 @@ export function handleCreateEnum(
     const range = stmtRangeOf(rawStmt)
     onError({
       kind: DdlErrorKind.DuplicateObject,
-      objectKind: 'EnumType',
+      objectKind: ObjectKind.EnumType,
       qualifiedName,
       message: `Duplicate type: ${qualifiedName}`,
       ...(range && { range }),

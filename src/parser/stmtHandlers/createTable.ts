@@ -200,7 +200,7 @@ export function handleCreateTable(
   if (acc.tableRegistry.has(tableKey)) {
     onError({
       kind: DdlErrorKind.DuplicateObject,
-      objectKind: 'Table',
+      objectKind: ObjectKind.Table,
       qualifiedName: tableKey,
       message: `Duplicate table: ${tableKey}`,
       ...(stmtRange_ && { range: stmtRange_ }),
