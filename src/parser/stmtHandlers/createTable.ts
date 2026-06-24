@@ -2,16 +2,16 @@
 
 import { deparseSync } from 'pgsql-parser'
 import type { CreateStmt, RawStmt, Node, ColumnDef, Constraint, TableLikeClause } from '@pgsql/types'
-import { ObjectKind, AttrKind, ReferenceOption, DdlErrorKind } from '../../constants'
+import { ObjectKind, ReferenceOption, DdlErrorKind } from '../../constants'
 import { PgAttrKind, PgObjectKind, PgGeneratedExprType, PgIdentityGeneration, PgPartitionStrategy } from '../../postgres.constants'
 import type { Table, Column, ColumnType, Index, IndexPart, ForeignKey, SchemaObject } from '../../schema'
 import type { Attr } from '../../attrs'
 import type { Expr } from '../../exprs'
 import {
-  newColumn, columnType, newCheck, newForeignKey, newIndex, newPrimaryKey,
-  comment, collation, generatedExpr, unsupportedType,
+  newColumn, newCheck, newForeignKey, newPrimaryKey,
+  collation, generatedExpr, unsupportedType,
 } from '../../factories'
-import type { SchemaAccumulator, PendingFK, PendingIndexPart } from '../schemaAccumulator'
+import type { SchemaAccumulator } from '../schemaAccumulator'
 import { mapTypeName } from '../typeMapper'
 import { strVal, stmtRangeOf, nodeToExpr, exprToString, unwrapNode } from '../astHelpers'
 import { PgNode, PgConstrType } from '../pgAst'
@@ -57,13 +57,6 @@ type PendingFKInfo = {
   refColumnNames: string[]
   onUpdate?: ReferenceOption
   onDelete?: ReferenceOption
-}
-
-type TableBuildResult = {
-  table: Table
-  pendingFKs: PendingFKInfo[]
-  pendingIndexParts: Array<{ part: IndexPart; columnKey: string }>
-  likeSource?: { sourceKey: string }
 }
 
 function buildColumn(
