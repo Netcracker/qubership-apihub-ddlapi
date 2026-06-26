@@ -160,15 +160,10 @@ const realm = await buildFromDdl(ddl, { onError: e => issues.push(e) })
   list. **Absence of `onError` does not mean the Realm is complete** — use
   `{ strict: true }` for pipelines that require completeness.
 - **Known output gaps to design fixtures around:**
-  - `COMMENT ON SCHEMA …` parses but **does not attach a schema-level comment**
-    node — only column- and table-level `COMMENT ON` produce `Comment` attrs.
   - Per-column `CHARACTER SET` is MySQL syntax and is a **hard `DdlParseError`** in
     the PostgreSQL parser; no `Charset` attr is ever produced from real DDL (even
     though `Charset` exists as a core `AttrKind`). `COLLATE` and `GENERATED ALWAYS
     AS (…) STORED` *are* produced (as `Collation` / `GeneratedExpr` column attrs).
-  - `DEFAULT 0` currently yields `Literal{ value: '' }` (a known parser defect for
-    the integer literal `0`; non-zero integer and text literals are fine). Avoid `0`
-    in fixtures that assert on the literal value.
 
 ```typescript
 try {
