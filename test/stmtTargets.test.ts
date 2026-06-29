@@ -1,6 +1,6 @@
 import { parseStatements } from '../src/parser/pgParser'
 import { describeStatement, type StatementDescriptor } from '../src/parser/stmtTargets'
-import { buildFromDdl } from '../src'
+import { buildFromDdl } from '../src/parser'
 
 async function describeAll(sql: string): Promise<(StatementDescriptor | undefined)[]> {
   const stmts = await parseStatements(sql)

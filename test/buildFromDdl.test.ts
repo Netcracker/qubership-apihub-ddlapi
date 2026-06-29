@@ -1,5 +1,6 @@
-import { buildFromDdl, DdlParseError, DdlBuildError, DDLAPI_VERSION } from '../src'
-import type { DdlNonFatalError } from '../src'
+import { DDLAPI_VERSION } from '../src'
+import { buildFromDdl, DdlParseError, DdlBuildError } from '../src/parser'
+import type { DdlNonFatalError } from '../src/parser'
 import { TypeKind, DdlErrorKind } from '../src/constants'
 
 // ── Realm shape ───────────────────────────────────────────────────────────────

@@ -21,9 +21,15 @@ export default defineConfig({
   build: {
     target: 'node24',
     lib: {
-      entry: resolve(__dirname, 'src/index.ts'),
-      name: 'QupershipApihubDdlApi',
-      fileName: (format) => format === 'es' ? 'index.js' : 'index.cjs',
+      // Two public entries: the parser-free model (`index`) and the WASM-bearing
+      // SQL parser (`parser`). Rollup hoists the shared model code into a common
+      // chunk imported by both, so model-only consumers of `index` never pull in
+      // anything reachable solely from `parser` (pgsql-parser / libpg-query WASM).
+      entry: {
+        index: resolve(__dirname, 'src/index.ts'),
+        parser: resolve(__dirname, 'src/parser.ts'),
+      },
+      fileName: (format, entryName) => format === 'es' ? `${entryName}.js` : `${entryName}.cjs`,
       formats: ['es', 'cjs'],
     },
     rollupOptions: {

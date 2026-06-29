@@ -1,4 +1,4 @@
-import { buildFromDdl } from '../../src'
+import { buildFromDdl } from '../../src/parser'
 import { loadSql } from '../helpers/loadSql'
 import { AttrKind, DdlErrorKind } from '../../src/constants'
 
