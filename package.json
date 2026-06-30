@@ -31,6 +31,8 @@
   },
   "scripts": {
     "build": "vite build",
+    "postbuild": "node scripts/assert-model-entry-parser-free.mjs",
+    "assert:model-entry": "node scripts/assert-model-entry-parser-free.mjs",
     "test": "jest",
     "typecheck": "tsc --noEmit"
   },
