@@ -11,7 +11,7 @@
 // change normalisation output.  strVal() is the single point where raw AST
 // strings enter the rest of the codebase; update it here if the parser changes.
 
-import { deparseSync } from 'pgsql-parser'
+import { deparseSync } from 'pgsql-deparser'
 import type { Node, RawStmt } from '@pgsql/types'
 import type { Expr } from '../exprs'
 import { literal, rawExpr } from '../factories'

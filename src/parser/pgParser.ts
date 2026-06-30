@@ -1,33 +1,25 @@
-// Private module — lazy pgsql-parser wrapper.
-// Nothing from pgsql-parser or @pgsql/types appears in the public API.
-// This file is the only place that imports pgsql-parser; swap it here to change parsers.
+// Private module — libpg-query parse wrapper.
+// Nothing from libpg-query or @pgsql/types appears in the public API.
+// This file is the only place that imports the parser; swap it here to change parsers.
+//
+// We import `parse` straight from libpg-query (the WASM parser) rather than through the
+// pgsql-parser wrapper — deparsing goes straight to pgsql-deparser elsewhere — so the
+// '/parser' build bundles only what it uses, with no extra CJS interop layer. This
+// module is only reachable from the package's '/parser' entry (never the model root),
+// and that entry bundles libpg-query with the WASM inlined. `parse` lazily initialises
+// the WASM on first call, so importing this module is cheap.
 
+import { parse } from 'libpg-query'
 import type { Node, RawStmt } from '@pgsql/types'
 
 export type { Node, RawStmt }
-
-// Module-level singleton — concurrent buildFromDdl calls share the same init promise.
-// Dynamic import() ensures the WASM chunk is excluded from consumer bundles that
-// never call buildFromDdl.
-let _parseFn: ((query: string) => Promise<unknown>) | null = null
-let _initPromise: Promise<void> | null = null
-
-function ensureInit(): Promise<void> {
-  if (!_initPromise) {
-    _initPromise = import('pgsql-parser').then((mod: { parse: (q: string) => Promise<unknown> }) => {
-      _parseFn = mod.parse
-    })
-  }
-  return _initPromise
-}
 
 /**
  * Parses a DDL string and returns the raw statement array.
  * Throws the pgsql-parser error on syntax failure (caller wraps into DdlParseError).
  */
 export async function parseStatements(ddl: string): Promise<RawStmt[]> {
-  await ensureInit()
-  const result = await _parseFn!(ddl) as { stmts?: RawStmt[] }
+  const result = await parse(ddl) as { stmts?: RawStmt[] }
   return result.stmts ?? []
 }
 

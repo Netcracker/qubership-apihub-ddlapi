@@ -18,7 +18,8 @@
     },
     "./parser": {
       "types": "./dist/parser.d.ts",
-      "import": "./dist/parser.js",
+      "browser": "./dist/parser.browser.js",
+      "import": "./dist/parser.browser.js",
       "require": "./dist/parser.cjs"
     }
   },
@@ -30,7 +31,7 @@
     }
   },
   "scripts": {
-    "build": "vite build",
+    "build": "vite build && vite build --config vite.browser.config.ts",
     "postbuild": "node scripts/assert-model-entry-parser-free.mjs",
     "assert:model-entry": "node scripts/assert-model-entry-parser-free.mjs",
     "test": "jest",
@@ -45,7 +46,8 @@
     "vite-plugin-dts": "^3.9.1"
   },
   "dependencies": {
-    "@pgsql/types": "^17.6.2",
-    "pgsql-parser": "^17.9.15"
+    "@pgsql/types": "17.6.2",
+    "libpg-query": "17.7.3",
+    "pgsql-deparser": "17.18.3"
   }
 }

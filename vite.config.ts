@@ -4,13 +4,13 @@ import { resolve } from 'path'
 import { builtinModules } from 'module'
 import pkg from './package.json'
 
-// Externalise runtime dependencies and Node built-ins instead of bundling them.
-// pgsql-parser pulls in libpg-query, whose loader reads `libpg-query.wasm` from
-// its own package directory via `readFileSync(__dirname + '/libpg-query.wasm')`.
-// Bundling it into this dist breaks that lookup (the .wasm never lands next to
-// our output), which is why the parser failed under Node. Keeping these external
-// lets the consumer's Node resolve pgsql-parser from node_modules, where the WASM
-// sits beside the loader, producing a Node-safe build.
+// Default build: the model (`index`) and the Node-facing parser (`parser`). The parser
+// stack (libpg-query / pgsql-deparser) is EXTERNALIZED here, so under Node the require
+// entry resolves them from node_modules and libpg-query reads libpg-query.wasm from disk
+// via fs — the proven Node-safe path. The browser-facing, self-contained `parser.browser`
+// build (vite.browser.config.ts) bundles + inlines the WASM instead, and is selected via
+// the package's `browser` export condition. The model entry imports none of the parser
+// stack, so it stays parser-free either way.
 const externalPackages = [...Object.keys(pkg.dependencies ?? {})]
 const nodeBuiltins = [...builtinModules, ...builtinModules.map((m) => `node:${m}`)]
 const isExternal = (id: string): boolean =>

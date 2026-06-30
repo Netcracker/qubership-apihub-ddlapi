@@ -1,6 +1,6 @@
 // Private module — handles CreateStmt (CREATE TABLE).
 
-import { deparseSync } from 'pgsql-parser'
+import { deparseSync } from 'pgsql-deparser'
 import type { CreateStmt, RawStmt, Node, ColumnDef, Constraint, TableLikeClause } from '@pgsql/types'
 import { ObjectKind, ReferenceOption, DdlErrorKind } from '../../constants'
 import { PgAttrKind, PgObjectKind, PgGeneratedExprType, PgIdentityGeneration, PgPartitionStrategy } from '../../postgres.constants'
