@@ -2,9 +2,9 @@
 // Nothing from libpg-query or @pgsql/types appears in the public API.
 // This file is the only place that imports the parser; swap it here to change parsers.
 //
-// We import `parse` straight from libpg-query (the WASM parser) rather than through the
-// pgsql-parser wrapper — deparsing goes straight to pgsql-deparser elsewhere — so the
-// '/parser' build bundles only what it uses, with no extra CJS interop layer. This
+// We import `parse` straight from libpg-query (the WASM parser); deparsing goes straight
+// to pgsql-deparser elsewhere. Avoiding the old pgsql-parser wrapper keeps the '/parser'
+// build to only what it uses, with no extra CJS interop layer. This
 // module is only reachable from the package's '/parser' entry (never the model root),
 // and that entry bundles libpg-query with the WASM inlined. `parse` lazily initialises
 // the WASM on first call, so importing this module is cheap.
@@ -16,7 +16,7 @@ export type { Node, RawStmt }
 
 /**
  * Parses a DDL string and returns the raw statement array.
- * Throws the pgsql-parser error on syntax failure (caller wraps into DdlParseError).
+ * Throws the libpg-query error on syntax failure (caller wraps into DdlParseError).
  */
 export async function parseStatements(ddl: string): Promise<RawStmt[]> {
   const result = await parse(ddl) as { stmts?: RawStmt[] }

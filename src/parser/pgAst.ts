@@ -1,4 +1,4 @@
-// Private module — string constants for pgsql-parser AST values.
+// Private module — string constants for libpg-query AST values.
 //
 // These node-type keys, Constraint.contype values, and CommentStmt.objtype
 // values are used for bracket access (`node['ColumnDef']`) and plain string
@@ -6,7 +6,7 @@
 // undefined or never matches. Naming them once here keeps every parser module
 // agreeing on the same spellings.
 
-/** pgsql-parser node-type keys: statement bodies (`stmtBody`) and wrapped child nodes. */
+/** libpg-query node-type keys: statement bodies (`stmtBody`) and wrapped child nodes. */
 export const PgNode = {
   // statement nodes
   CreateStmt: 'CreateStmt',
@@ -31,7 +31,7 @@ export const PgNode = {
   TypeName: 'TypeName',
 } as const
 
-/** pgsql-parser Constraint.contype values. */
+/** libpg-query Constraint.contype values. */
 export const PgConstrType = {
   NotNull: 'CONSTR_NOTNULL',
   Null: 'CONSTR_NULL',
@@ -45,7 +45,7 @@ export const PgConstrType = {
   Exclusion: 'CONSTR_EXCLUSION',
 } as const
 
-/** pgsql-parser CommentStmt.objtype values. */
+/** libpg-query CommentStmt.objtype values. */
 export const PgCommentObject = {
   Table: 'OBJECT_TABLE',
   Column: 'OBJECT_COLUMN',

@@ -1,8 +1,8 @@
 // Public API — the ddlapi data model and vocabulary (parser-free, no WASM).
 //
 // The SQL parser (`buildFromDdl`, `prepareDdlExtractor`) lives in the separate
-// './parser' subpath entry. Importing the parser is what pulls in pgsql-parser /
-// libpg-query and its ~1.1 MB WASM, so this entry is deliberately kept parser-free:
+// './parser' subpath entry. Importing the parser is what pulls in libpg-query and its
+// ~1.1 MB WASM, so this entry is deliberately kept parser-free:
 // model-only consumers can import the vocabulary
 // here without dragging the WASM into their bundles.
 //

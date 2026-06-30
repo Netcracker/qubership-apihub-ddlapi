@@ -28,7 +28,7 @@ import type { Realm } from '../schema'
 export type DdlNonFatalError =
   | {
     kind: typeof DdlErrorKind.OutOfScopeStatement
-    /** AST node type name from pgsql-parser, e.g. 'AlterTableStmt', 'DropStmt'. */
+    /** AST node type name from libpg-query, e.g. 'AlterTableStmt', 'DropStmt'. */
     statementType: string
     message: string
     range?: SourceRange

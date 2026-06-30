@@ -44,7 +44,7 @@ describe('realm structure', () => {
 // ── Identifier normalisation ──────────────────────────────────────────────────
 
 describe('identifier normalisation', () => {
-  test('unquoted identifiers are lowercased by pgsql-parser', async () => {
+  test('unquoted identifiers are lowercased by libpg-query', async () => {
     const realm = await buildFromDdl('CREATE TABLE MyTable (MyCol BIGINT);')
     const table = realm.schemas[0]!.tables![0]!
     expect(table.name).toBe('mytable')

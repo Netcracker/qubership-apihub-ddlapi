@@ -1,7 +1,7 @@
-// Shared AST helper utilities for pgsql-parser node extraction.
+// Shared AST helper utilities for libpg-query node extraction.
 //
 // Identifier normalisation contract (PostgreSQL §4.1.1):
-//   pgsql-parser's lexer folds unquoted identifiers to lower-case and preserves
+//   libpg-query's lexer folds unquoted identifiers to lower-case and preserves
 //   the original case of double-quoted identifiers — exactly mirroring what the
 //   PostgreSQL backend does.  Every `sval` string returned by `strVal()` has
 //   already been through this folding, so registry keys formed from strVal() calls
@@ -18,14 +18,14 @@ import { literal, rawExpr } from '../factories'
 import type { SourceRange } from './positions'
 
 /**
- * The payload type of a wrapped pgsql-parser node for key K.
+ * The payload type of a wrapped libpg-query node for key K.
  * `Node` is a union of single-key wrappers (`{ ColumnDef: ColumnDef } | …`), so
  * NodeValue<'ColumnDef'> resolves to ColumnDef.
  */
 export type NodeValue<K extends string> = Extract<Node, Record<K, unknown>> extends Record<K, infer V> ? V : never
 
 /**
- * Unwraps a wrapped pgsql-parser node `{ Key: Payload }` to its typed payload, or
+ * Unwraps a wrapped libpg-query node `{ Key: Payload }` to its typed payload, or
  * undefined when the node is absent or of a different kind. The lone unavoidable
  * cast (the AST arrives as a `Node` union that cannot be indexed generically) is
  * centralised here so call sites stay fully typed.
@@ -44,10 +44,10 @@ export function stmtBody<K extends string>(rawStmt: RawStmt, key: K): NodeValue<
 }
 
 /**
- * Extracts the string value (sval) from a pgsql-parser String node.
+ * Extracts the string value (sval) from a libpg-query String node.
  * Returns undefined for any other node shape.
  *
- * Identifier normalisation is performed upstream by pgsql-parser's lexer:
+ * Identifier normalisation is performed upstream by libpg-query's lexer:
  * unquoted identifiers arrive lower-cased; quoted identifiers preserve case.
  */
 export function strVal(node: Node | undefined): string | undefined {
@@ -58,7 +58,7 @@ export function strVal(node: Node | undefined): string | undefined {
 
 /**
  * Returns the byte-range of the whole SQL statement (stmt_location + stmt_len).
- * Returns undefined when stmt_len is absent (pgsql-parser omits it for the last
+ * Returns undefined when stmt_len is absent (libpg-query omits it for the last
  * statement in a script).
  */
 export function stmtRangeOf(rawStmt: RawStmt): SourceRange | undefined {
@@ -76,7 +76,7 @@ export function stmtRangeOf(rawStmt: RawStmt): SourceRange | undefined {
 export function nodeToExpr(node: Node): Expr {
   const c = (node as Record<string, unknown>)['A_Const'] as Record<string, unknown> | undefined
   if (c) {
-    // pgsql-parser serialises protobuf, which omits zero-valued scalar fields:
+    // libpg-query serialises protobuf, which omits zero-valued scalar fields:
     // DEFAULT 0 arrives as `ival: {}` and DEFAULT false as `boolval: {}` (the
     // inner field is dropped). Fall back to the protobuf default — 0 / false —
     // not '', so zero literals round-trip correctly.
@@ -89,7 +89,7 @@ export function nodeToExpr(node: Node): Expr {
 }
 
 /**
- * Deparses any pgsql-parser AST node to its SQL text representation.
+ * Deparses any libpg-query AST node to its SQL text representation.
  */
 export function exprToString(node: Node): string {
   return deparseSync(node as Record<string, unknown>)
