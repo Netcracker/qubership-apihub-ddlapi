@@ -141,22 +141,33 @@ Registry keys are normalised qualified names: `"schema.table"`,
 
 ## Parser boundaries you must not cross
 
-- **`pgParser.ts` is the only file that imports `pgsql-parser`.** It lazily
-  initialises the libpg_query WASM via a module-level singleton and a dynamic
-  `import()` so consumers who never call `buildFromDdl` don't bundle the WASM.
-  Route any new parser-library use through here; to swap parsers, change only
-  this file.
+- **`pgParser.ts` is the only file that imports the parser.** It imports `parse`
+  from `libpg-query` directly (not through the old `pgsql-parser` wrapper);
+  deparsing imports `deparseSync` from `pgsql-deparser`. Route any new
+  parser-library use through `pgParser.ts` / the deparse helpers; to swap parsers,
+  change only those.
 - **`strVal()` in `astHelpers.ts` is the single entry point for raw AST
-  identifier strings.** pgsql-parser's lexer already folds unquoted identifiers
+  identifier strings.** libpg-query's lexer already folds unquoted identifiers
   to lower-case and preserves quoted case, mirroring PostgreSQL. Form every
   registry key and stored name from `strVal()` so normalisation stays in one
   place. Deparsing back to SQL text goes through `exprToString` / `nodeToExpr`
   (both wrap `deparseSync`).
-- **Public surface is `src/index.ts` only.** Everything under `src/parser/`
-  except the handful re-exported from `buildFromDdl.ts` (`buildFromDdl`,
-  `DdlParseError`, `DdlBuildError`, `DdlNonFatalError`, `BuildFromDdlOptions`)
-  and `SourceRange` from `positions.ts` is private. Never let `@pgsql/types`
-  or `pgsql-parser` types appear in an exported signature.
+- **Two public entries — keep the model root parser-free.** `src/index.ts` is the
+  **model** entry (types, `kind` constants, factories, utilities); `src/parser.ts`
+  is the `/parser` entry (`buildFromDdl`, `DdlParseError`, `DdlBuildError`,
+  `DdlNonFatalError`, `BuildFromDdlOptions`, `prepareDdlExtractor` +
+  `DdlExtractor…`, `SourceRange`). The model root must never reach `pgParser`,
+  `buildFromDdl`, the compare/extract paths, or `libpg-query` / `pgsql-deparser` —
+  a `postbuild` guard (`scripts/assert-model-entry-parser-free.mjs`) fails the
+  build if it does. Everything under `src/parser/` except what these two entries
+  re-export is private; never let `@pgsql/types` or parser-library types appear in
+  a model-root signature.
+- **`/parser` is dual-built** (`vite.config.ts` + `vite.browser.config.ts`): the
+  default/Node build externalizes `libpg-query` (Node reads the WASM from
+  `node_modules` via `fs`); the `browser`-condition build bundles it and inlines
+  the WASM as `wasmBinary` (see `vite-libpg-query-inline-wasm.plugin.ts`) so
+  browser consumers need no libpg-query plugins. Keep both configs and the
+  `exports` conditions in sync when touching the parser entry or its deps.
 
 ## Reading the AST — prefer typed access over `Record<string, unknown>`
 

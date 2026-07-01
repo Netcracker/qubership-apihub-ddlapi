@@ -1,5 +1,5 @@
 lockfile_version: '1'
-generated_at: '2026-06-26T10:21:09.199031+00:00'
+generated_at: '2026-07-01T13:57:55.049249+00:00'
 apm_version: 0.22.0
 dependencies:
 - repo_url: _local/ddlapi-authoring
@@ -15,9 +15,9 @@ dependencies:
   - .cursor/rules/ddlapi-authoring.mdc
   - .github/instructions/ddlapi-authoring.instructions.md
   deployed_file_hashes:
-    .agents/skills/ddlapi-authoring/SKILL.md: sha256:b1ee4fc92847ef011eb5cbc50a5e5f65f4fb2306a91e1be5c82143aaee34781d
+    .agents/skills/ddlapi-authoring/SKILL.md: sha256:f64ed4484756dfe8842f16671b1715ffcdff6437f98ea0e755415c025ae07b64
     .claude/rules/ddlapi-authoring.md: sha256:a1238c172694efbd0b50d63ddee7a7c8a1f8e15ccdfafcb0ebede307bb0159b5
-    .claude/skills/ddlapi-authoring/SKILL.md: sha256:b1ee4fc92847ef011eb5cbc50a5e5f65f4fb2306a91e1be5c82143aaee34781d
+    .claude/skills/ddlapi-authoring/SKILL.md: sha256:f64ed4484756dfe8842f16671b1715ffcdff6437f98ea0e755415c025ae07b64
     .cursor/rules/ddlapi-authoring.mdc: sha256:63af27098d02c7a1247c2cfc102c430e0d88c7d4eb75920260dcef6a030a532c
     .github/instructions/ddlapi-authoring.instructions.md: sha256:94770038b5673246893b930ee909eb020e5e57de43d49bb5deab9ab6706699c8
   source: local
