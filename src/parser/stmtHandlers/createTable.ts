@@ -1,6 +1,6 @@
 // Private module — handles CreateStmt (CREATE TABLE).
 
-import { deparseSync } from 'pgsql-parser'
+import { deparseSync } from 'pgsql-deparser'
 import type { CreateStmt, RawStmt, Node, ColumnDef, Constraint, TableLikeClause } from '@pgsql/types'
 import { ObjectKind, ReferenceOption, DdlErrorKind } from '../../constants'
 import { PgAttrKind, PgObjectKind, PgGeneratedExprType, PgIdentityGeneration, PgPartitionStrategy } from '../../postgres.constants'
@@ -20,7 +20,7 @@ import type { DdlNonFatalError } from '../buildFromDdl'
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 function constIval(node: Node): number | undefined {
-  // pgsql-parser serialises protobuf, which omits a zero-valued `ival`: the
+  // libpg-query serialises protobuf, which omits a zero-valued `ival`: the
   // integer 0 (e.g. START WITH 0) arrives with the inner field dropped. The
   // wrapper's presence already proves an integer node, so a missing inner ⇒ 0.
   // A_Const form — used in column defaults, typmods, etc.
@@ -153,7 +153,7 @@ function buildColumn(
         ...(seqIncrement !== undefined && { seqIncrement }),
       } as Attr)
     }
-    // COLLATE is not a constraint (no CONSTR_COLLATION in pgsql-parser) — it is
+    // COLLATE is not a constraint (no CONSTR_COLLATION in libpg-query) — it is
     // handled via cd.collClause below.
   }
 

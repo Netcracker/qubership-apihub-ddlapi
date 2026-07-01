@@ -1,6 +1,6 @@
 // Private module — handles IndexStmt (CREATE [UNIQUE] INDEX).
 
-import { deparseSync } from 'pgsql-parser'
+import { deparseSync } from 'pgsql-deparser'
 import type { IndexStmt, RawStmt } from '@pgsql/types'
 import { ObjectKind, DdlErrorKind } from '../../constants'
 import { PgAttrKind } from '../../postgres.constants'

@@ -1,4 +1,4 @@
-// Private module — the single source of truth for which pgsql-parser top-level
+// Private module — the single source of truth for which libpg-query top-level
 // statement types ddlapi supports.
 //
 // Both buildFromDdl (its dispatch) and the table-DDL extractor (its eligibility
@@ -9,7 +9,7 @@
 
 import { PgNode } from './pgAst'
 
-/** pgsql-parser top-level statement type-name keys that ddlapi supports. */
+/** libpg-query top-level statement type-name keys that ddlapi supports. */
 export const SUPPORTED_STMT_TYPES = [
   PgNode.CreateStmt,        // CREATE TABLE
   PgNode.IndexStmt,         // CREATE [UNIQUE] INDEX

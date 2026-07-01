@@ -9,15 +9,34 @@ ddlapi turns PostgreSQL DDL into a structured, driver-neutral schema model (a
 `Realm`), and provides factories to build that model by hand. The notes below cover
 the contracts that the type signatures alone do not make obvious.
 
-## Import only from the package root
+## Two entry points: the model root and `/parser`
+
+ddlapi splits its public API across two entries so that code which only needs the
+data model never pulls in the SQL parser (pgsql / libpg-query, ~1.1 MB WASM):
+
+- **`@netcracker/qubership-apihub-ddlapi`** — the parser-free **data model**: types,
+  the `kind` constant groups, factories, and model utilities (`findAttr`, …). Safe
+  to import from anywhere, including main-thread / UI code.
+- **`@netcracker/qubership-apihub-ddlapi/parser`** — the WASM-bearing **parser**:
+  `buildFromDdl`, `prepareDdlExtractor`, and the parser error/warning types
+  (`DdlParseError`, `DdlBuildError`, `DdlNonFatalError`, `DdlExtractor…`). Import
+  this **only** where you actually parse DDL, ideally behind a dynamic `import()`
+  so the WASM lands in its own lazily-loaded chunk.
 
 ```typescript
-import { buildFromDdl, TypeKind, ObjectKind, PgAttrKind, PgObjectKind, PgTypeKind } from '@netcracker/qubership-apihub-ddlapi'
+// model — from the root
+import { TypeKind, ObjectKind, PgAttrKind, newTable, columnType } from '@netcracker/qubership-apihub-ddlapi'
+// parser — from the /parser subpath
+import { buildFromDdl, prepareDdlExtractor } from '@netcracker/qubership-apihub-ddlapi/parser'
 ```
 
-Everything is re-exported from the package entry (`index.ts`); internal module
-paths are unstable and must not be imported directly. The package ships dual
-ESM/CJS builds with type declarations.
+`Realm` / `Schema` / `Table` and all model types come from the **root** — the value
+returned by `buildFromDdl` is still typed via the root. Keep `/parser` out of
+model-only and main-thread code so those bundles stay WASM-free. Internal module
+paths beneath either entry are unstable and must not be imported directly. Both
+entries ship dual ESM/CJS declarations; the browser build of `/parser` is
+self-contained (WASM inlined — no bundler plugins needed), while Node reads the
+WASM from `node_modules`.
 
 ## The model is navigated top-down
 
@@ -182,7 +201,7 @@ into a verbatim subset per table — distinct from `buildFromDdl`, which builds 
 not a structured model.
 
 ```typescript
-import { prepareDdlExtractor } from '@netcracker/qubership-apihub-ddlapi'
+import { prepareDdlExtractor } from '@netcracker/qubership-apihub-ddlapi/parser'
 
 const extractor = await prepareDdlExtractor(ddl)   // heavy work once
 for (const ref of extractor.tables()) {            // { schema, name }, source order
@@ -216,7 +235,7 @@ Contract details that the signatures do not make obvious:
   (`table`).
 
   ```typescript
-  import { DdlExtractorWarningKind } from '@netcracker/qubership-apihub-ddlapi'
+  import { DdlExtractorWarningKind } from '@netcracker/qubership-apihub-ddlapi/parser'
 
   for (const w of slice.warnings) {
     if (w.kind === DdlExtractorWarningKind.OmittedForeignKeyTarget) {

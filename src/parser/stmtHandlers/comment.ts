@@ -145,7 +145,7 @@ export function handleComment(
 
     case PgCommentObject.TableConstraint: {
       // parts: [schema?, tableName, constraintName]
-      // pgsql-parser: List items = [tableName String, constraintName String]
+      // libpg-query: List items = [tableName String, constraintName String]
       const parts = listStrings(stmt.object)
       if (parts.length < 2) return
       const constraintName = parts[parts.length - 1]!

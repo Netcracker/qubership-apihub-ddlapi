@@ -1,4 +1,4 @@
-import { buildFromDdl } from '../src'
+import { buildFromDdl } from '../src/parser'
 import { DdlErrorKind } from '../src/constants'
 import type { DdlNonFatalError } from '../src/parser/buildFromDdl'
 import { SUPPORTED_STMT_TYPES, SUPPORTED_STMT_TYPE_SET, type SupportedStmtType } from '../src/parser/supportedStatements'

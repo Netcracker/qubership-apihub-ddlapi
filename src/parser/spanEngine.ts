@@ -1,5 +1,5 @@
 // Private module — pure, parser-agnostic source-span utilities for verbatim DDL
-// extraction. Operates in UTF-8 *byte* space, matching pgsql-parser /
+// extraction. Operates in UTF-8 *byte* space, matching libpg-query /
 // libpg_query stmt_location / stmt_len offsets. Imports nothing from the parser.
 //
 // Responsibilities (no relevance logic lives here):

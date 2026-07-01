@@ -1,6 +1,6 @@
 // Private module — handles CreateTrigStmt (CREATE TRIGGER).
 
-import { deparseSync } from 'pgsql-parser'
+import { deparseSync } from 'pgsql-deparser'
 import type { CreateTrigStmt, RawStmt } from '@pgsql/types'
 import { DdlErrorKind } from '../../constants'
 import { PgAttrKind, PgTriggerTiming, PgTriggerEvent } from '../../postgres.constants'

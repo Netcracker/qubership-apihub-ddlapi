@@ -16,7 +16,7 @@ dialect-specific details that have no driver-neutral representation.
   JSON. See [`src/schema.ts`](src/schema.ts), [`src/types.ts`](src/types.ts), [`src/attrs.ts`](src/attrs.ts), and
   [`src/exprs.ts`](src/exprs.ts).
 - **Build from DDL** — `buildFromDdl(ddl)` parses PostgreSQL DDL (via the WASM
-  [`pgsql-parser`](https://github.com/launchql/pgsql-parser)) and returns a fully-wired `Realm`, resolving
+  [`libpg-query`](https://www.npmjs.com/package/libpg-query)) and returns a fully-wired `Realm`, resolving
   cross-statement references (FK targets, enum/domain types, `LIKE` sources) into shared object instances. See
   [`src/parser/buildFromDdl.ts`](src/parser/buildFromDdl.ts).
 - **DDL slicer** — `prepareDdlExtractor(ddl)` indexes a multi-table script once, then returns the minimal
@@ -34,12 +34,14 @@ dialect-specific details that have no driver-neutral representation.
 npm install @netcracker/qubership-apihub-ddlapi
 ```
 
-The package ships dual ESM/CJS builds with type declarations. It runs on Node.js (the slicer uses `Buffer`).
+The package ships dual ESM/CJS builds with type declarations. The model runs anywhere. The `/parser` entry runs
+in Node.js (it reads its WASM from `node_modules`) and in the browser (a self-contained build with the WASM
+inlined, so no bundler plugins are needed).
 
 ## Quick start
 
 ```typescript
-import { buildFromDdl } from '@netcracker/qubership-apihub-ddlapi'
+import { buildFromDdl } from '@netcracker/qubership-apihub-ddlapi/parser'
 
 const realm = await buildFromDdl(`
   CREATE TABLE public.users (
@@ -137,7 +139,7 @@ subset per table — distinct from `buildFromDdl`, which builds the structured `
 *original SQL text* relevant to one table, not a model.
 
 ```typescript
-import { prepareDdlExtractor } from '@netcracker/qubership-apihub-ddlapi'
+import { prepareDdlExtractor } from '@netcracker/qubership-apihub-ddlapi/parser'
 
 const extractor = await prepareDdlExtractor(ddl)   // heavy work once (async, WASM)
 for (const ref of extractor.tables()) {            // { schema, name }, in source order
@@ -171,7 +173,7 @@ still returned (exposed as `DdlBuildError.realm`). **Absence of `onError` does n
 complete** — use `{ strict: true }` for pipelines that require completeness.
 
 ```typescript
-import { buildFromDdl, DdlParseError, DdlBuildError } from '@netcracker/qubership-apihub-ddlapi'
+import { buildFromDdl, DdlParseError, DdlBuildError } from '@netcracker/qubership-apihub-ddlapi/parser'
 
 try {
   const realm = await buildFromDdl(ddl, { strict: true })
@@ -183,7 +185,7 @@ try {
 
 ## Assumptions and limitations
 
-- **PostgreSQL dialect only.** Parsing is backed by the PostgreSQL grammar (`pgsql-parser`). MySQL-style syntax
+- **PostgreSQL dialect only.** Parsing is backed by the PostgreSQL grammar (`libpg-query`). MySQL-style syntax
   such as per-column `CHARACTER SET` is rejected as a hard `DdlParseError`. (The `Charset` attr exists in the core
   model for Atlas-Go parity but is never produced from real DDL.)
 - **`CREATE` statements only.** Only these top-level statements are parsed:
@@ -200,16 +202,24 @@ try {
 
 ## API surface
 
-Import everything from the package root — internal module paths are unstable and must not be imported directly.
+The public API is split across two entries; import from whichever you need, and never from internal module paths
+(they are unstable).
+
+- **`@netcracker/qubership-apihub-ddlapi`** — the parser-free **data model**: the schema model types, the `Pg*` and
+  core `*Kind` constants, the factories, and the `utils` helpers. Re-exported from [`src/index.ts`](src/index.ts).
+- **`@netcracker/qubership-apihub-ddlapi/parser`** — the WASM-bearing **parser**: `buildFromDdl` (with
+  `DdlParseError`, `DdlBuildError`, `BuildFromDdlOptions`, `DdlNonFatalError`) and `prepareDdlExtractor` (with
+  `DdlExtractor`, `TableRef`, `TableDdlSlice`, `DdlExtractorWarning`, `DdlExtractorWarningKind`), plus `SourceRange`.
+  Re-exported from [`src/parser.ts`](src/parser.ts).
 
 ```typescript
-import { buildFromDdl, prepareDdlExtractor, newTable, TypeKind /* … */ } from '@netcracker/qubership-apihub-ddlapi'
+import { newTable, TypeKind /* … */ } from '@netcracker/qubership-apihub-ddlapi'
+import { buildFromDdl, prepareDdlExtractor } from '@netcracker/qubership-apihub-ddlapi/parser'
 ```
 
-The public surface is re-exported from [`src/index.ts`](src/index.ts): the schema model types, the `Pg*` and core
-`*Kind` constants, the factories and `utils` helpers, `buildFromDdl` (with `DdlParseError`, `DdlBuildError`,
-`BuildFromDdlOptions`, `DdlNonFatalError`), and `prepareDdlExtractor` (with `DdlExtractor`, `TableRef`,
-`TableDdlSlice`, `DdlExtractorWarning`, `DdlExtractorWarningKind`).
+The split keeps the parser and its ~1.1 MB WASM out of code that only needs the model — import `/parser` **only**
+where you actually parse DDL. `Realm` and every model type come from the root; the value `buildFromDdl` returns is
+still typed via the root.
 
 ## Development
 

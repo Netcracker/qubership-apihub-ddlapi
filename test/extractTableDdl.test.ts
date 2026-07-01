@@ -1,4 +1,4 @@
-import { prepareDdlExtractor, DdlParseError } from '../src'
+import { prepareDdlExtractor, DdlParseError } from '../src/parser'
 
 /** Extracts one table's slice SQL. Each test asserts it against literal expected text. */
 const sliceOf = async (ddl: string, name: string, schema = 'public'): Promise<string> =>
