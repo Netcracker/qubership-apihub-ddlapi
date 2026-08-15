@@ -1,6 +1,11 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
+    /* TypeScript 6 defaults "types" to [] rather than every package under typeRoots. */
+    "types": ["node", "jest"],
+    /* TS 6 reports moduleResolution:node and baseUrl as deprecated (TS5107/TS5101);
+       both still function through 6.x. */
+    "ignoreDeprecations": "6.0",
     "moduleResolution": "node",
     "module": "CommonJS",
     "rootDir": ".",
