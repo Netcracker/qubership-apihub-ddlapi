@@ -241,32 +241,64 @@ describe('referential equality', () => {
     expect(stateCol.type!.type).toBe(enumObj)
   })
 
-  test('FK refTable points to same Table instance as tables array', async () => {
+})
+
+// ── Foreign key targets ───────────────────────────────────────────────────────
+
+describe('foreign key targets', () => {
+  test('FK names its target table with the schema', async () => {
     const realm = await buildFromDdl(
       `CREATE TABLE users (id bigint PRIMARY KEY);
        CREATE TABLE posts (id bigint PRIMARY KEY, author_id bigint REFERENCES users(id));`
     )
-    const schema = realm.schemas[0]!
-    const usersTable = schema.tables!.find(t => t.name === 'users')!
-    const posts = schema.tables!.find(t => t.name === 'posts')!
+    const posts = realm.schemas[0]!.tables!.find(t => t.name === 'posts')!
     const fk = posts.foreignKeys![0]!
-    expect(fk.refTable).toBe(usersTable)
+    expect(fk.columns).toEqual(['author_id'])
+    expect(fk.refTable).toEqual({ schema: 'public', name: 'users' })
+    expect(fk.refColumns).toEqual(['id'])
   })
 
-  test('FK column points to same Column instance as table.columns', async () => {
+  test('FK to a table in another schema names that schema', async () => {
+    const realm = await buildFromDdl(
+      `CREATE TABLE auth.users (id bigint PRIMARY KEY);
+       CREATE TABLE app.posts (id bigint PRIMARY KEY, author_id bigint REFERENCES auth.users(id));`
+    )
+    const posts = realm.schemas.find(s => s.name === 'app')!.tables![0]!
+    expect(posts.foreignKeys![0]!.refTable).toEqual({ schema: 'auth', name: 'users' })
+  })
+
+  test('FK to an unknown table keeps its names', async () => {
+    const errors: DdlNonFatalError[] = []
+    const realm = await buildFromDdl(
+      `CREATE TABLE orders (id bigint PRIMARY KEY, user_id bigint REFERENCES users(id));`,
+      { onError: e => errors.push(e) }
+    )
+    expect(errors.map(e => e.kind)).toEqual([DdlErrorKind.UnresolvedReference])
+    const fk = realm.schemas[0]!.tables![0]!.foreignKeys![0]!
+    expect(fk.refTable).toEqual({ schema: 'public', name: 'users' })
+    expect(fk.refColumns).toEqual(['id'])
+  })
+
+  test('FK to an unknown column keeps its name', async () => {
+    const errors: DdlNonFatalError[] = []
     const realm = await buildFromDdl(
       `CREATE TABLE users (id bigint PRIMARY KEY);
-       CREATE TABLE posts (
-         id bigint PRIMARY KEY,
-         author_id bigint REFERENCES users(id)
-       );`
+       CREATE TABLE orders (id bigint PRIMARY KEY, user_id bigint REFERENCES users(uid));`,
+      { onError: e => errors.push(e) }
     )
-    const schema = realm.schemas[0]!
-    const posts = schema.tables!.find(t => t.name === 'posts')!
-    const authorCol = posts.columns!.find(c => c.name === 'author_id')!
-    const fk = posts.foreignKeys![0]!
-    // fk.columns[0] should be the same object as the author_id column
-    expect(fk.columns![0]).toBe(authorCol)
+    expect(errors).toHaveLength(1)
+    expect(errors[0]).toMatchObject({ kind: DdlErrorKind.UnresolvedReference, target: 'public.users.uid' })
+    const orders = realm.schemas[0]!.tables!.find(t => t.name === 'orders')!
+    expect(orders.foreignKeys![0]!.refColumns).toEqual(['uid'])
+  })
+
+  test('realm with a self-referencing FK round-trips through JSON', async () => {
+    const realm = await buildFromDdl(
+      `CREATE TABLE node (id bigint PRIMARY KEY, parent_id bigint REFERENCES node);`
+    )
+    const fk = realm.schemas[0]!.tables![0]!.foreignKeys![0]!
+    expect(fk.refTable).toEqual({ schema: 'public', name: 'node' })
+    expect(JSON.parse(JSON.stringify(realm))).toEqual(realm)
   })
 })
 
