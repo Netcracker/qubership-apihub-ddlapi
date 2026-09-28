@@ -135,7 +135,7 @@ rely on this (`...(tables.length > 0 && { tables })`).
 2. **Pass 2 — `resolveReferences`.** Runs after every statement is parsed, in a
    **fixed order that must be preserved**: LIKE expansion → column-type upgrade
    (`UnsupportedType` → registered type) → orphan index re-attachment →
-   foreign-key target check → index-part column check. In-place mutation is
+   foreign-key check → index-part column check. In-place mutation is
    fine here because the Realm has not been returned yet.
 
 When you add a construct that can reference another statement, register a

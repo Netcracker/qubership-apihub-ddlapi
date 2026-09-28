@@ -302,6 +302,57 @@ describe('foreign key targets', () => {
   })
 })
 
+// ── Key columns that the table does not define ───────────────────────────────
+
+describe('key columns that the table does not define', () => {
+  test('primary key on an unknown column keeps the name and reports it', async () => {
+    const errors: DdlNonFatalError[] = []
+    const realm = await buildFromDdl(
+      `CREATE TABLE t (id bigint, PRIMARY KEY (not_a_column));`,
+      { onError: e => errors.push(e) }
+    )
+    expect(errors).toHaveLength(1)
+    expect(errors[0]).toMatchObject({ kind: DdlErrorKind.UnresolvedReference, target: 'public.t.not_a_column' })
+    expect(errors[0]!.message).toBe("Primary key references unknown column 'not_a_column' in table 'public.t'")
+    expect(realm.schemas[0]!.tables![0]!.primaryKey!.parts![0]!.column).toBe('not_a_column')
+  })
+
+  test('foreign key on an unknown local column keeps the name and reports it', async () => {
+    const errors: DdlNonFatalError[] = []
+    const realm = await buildFromDdl(
+      `CREATE TABLE users (id bigint PRIMARY KEY);
+       CREATE TABLE orders (id bigint, FOREIGN KEY (user_id) REFERENCES users (id));`,
+      { onError: e => errors.push(e) }
+    )
+    expect(errors).toHaveLength(1)
+    expect(errors[0]).toMatchObject({ kind: DdlErrorKind.UnresolvedReference, target: 'public.orders.user_id' })
+    const orders = realm.schemas[0]!.tables!.find(t => t.name === 'orders')!
+    expect(orders.foreignKeys![0]!.columns).toEqual(['user_id'])
+  })
+
+  test('key columns copied by LIKE are known', async () => {
+    const errors: DdlNonFatalError[] = []
+    await buildFromDdl(
+      `CREATE TABLE base (id bigint, owner_id bigint);
+       CREATE TABLE users (id bigint PRIMARY KEY);
+       CREATE TABLE t (LIKE base, PRIMARY KEY (id), FOREIGN KEY (owner_id) REFERENCES users (id));`,
+      { onError: e => errors.push(e) }
+    )
+    expect(errors).toHaveLength(0)
+  })
+
+  test('key columns inherited through INHERITS are not checked', async () => {
+    const errors: DdlNonFatalError[] = []
+    await buildFromDdl(
+      `CREATE TABLE users (id bigint PRIMARY KEY);
+       CREATE TABLE base (id bigint, owner_id bigint);
+       CREATE TABLE t (note text, PRIMARY KEY (id), FOREIGN KEY (owner_id) REFERENCES users (id)) INHERITS (base);`,
+      { onError: e => errors.push(e) }
+    )
+    expect(errors).toHaveLength(0)
+  })
+})
+
 // ── Type resolution scope ─────────────────────────────────────────────────────
 
 describe('type resolution scope', () => {

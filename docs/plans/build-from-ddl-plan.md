@@ -374,8 +374,8 @@ export async function buildFromDdl(ddl: string, options?: BuildFromDdlOptions): 
 | `ALTER TABLE`, `DROP`, DML, `CREATE SEQUENCE`, `CREATE VIEW`, `CREATE SCHEMA`, `CREATE EXTENSION`, `CREATE FUNCTION`, `CREATE TABLE … PARTITION OF` | `out-of-scope-statement` | Statement absent from Realm |
 | `COMMENT ON` references unknown object | `unresolved-reference` | Comment discarded; target object unchanged |
 | `CREATE INDEX` on unknown table (after pass 2) | `unresolved-reference` | Index present in `Schema.objects`, not attached to any table |
-| Unresolvable FK `refTable` or `refColumns` (after pass 2) | `unresolved-reference` | Table present; `ForeignKey.refTable` / `refColumns` keep the names from the DDL |
-| Index part on a column the table does not define (after pass 2) | `unresolved-reference` | Index present; `IndexPart.column` keeps the name. Not reported for a table with `INHERITS` |
+| Unresolvable FK `columns`, `refTable`, or `refColumns` (after pass 2) | `unresolved-reference` | Table present; `ForeignKey.columns` / `refTable` / `refColumns` keep the names from the DDL. Column names are not checked against a table with `INHERITS` |
+| Index or primary key part on a column the table does not define (after pass 2) | `unresolved-reference` | Index present; `IndexPart.column` keeps the name. Not reported for a table with `INHERITS` |
 | Duplicate object (same qualified name) | `duplicate-object` | Second statement absent; first retained |
 | `LIKE other_table` — source not in same DDL | `unresolved-like-source` | Entire table absent from Realm |
 | `INSTEAD OF` trigger on unknown view | `unresolved-reference` | Trigger discarded |
@@ -470,16 +470,18 @@ Runs after all statements are parsed. Order within pass 2:
    scenarios), look up its target table in `tableRegistry`. If found, move the index into
    `Table.indexes`. No `onError` — forward-reference is valid DDL ordering.
 
-4. **ForeignKey target check**: pass 1 already stores `ForeignKey.refTable` as a `TableRef` and
-   `ForeignKey.refColumns` as column names. Pass 2 looks them up in `tableRegistry` and
-   `columnRegistry` only to report a name that the DDL does not define →
+4. **ForeignKey check**: pass 1 already stores `ForeignKey.columns` and `ForeignKey.refColumns`
+   as column names and `ForeignKey.refTable` as a `TableRef`. Pass 2 looks them up in
+   `tableRegistry` and `columnRegistry` only to report a name that the DDL does not define →
    `unresolved-reference` error; the key keeps the name.
 
 5. **Index part columns**: pass 1 already stores `IndexPart.column` as a column name. Pass 2
-   looks up the parts of `CREATE INDEX` and table-level `UNIQUE` in `columnRegistry` and
+   looks up the parts of every index, including the primary key, in `columnRegistry` and
    reports a column that the table does not define → `unresolved-reference` error; the part
-   keeps the name. Parts on an unknown table (reported by step 3) and on a table with
-   `INHERITS` (its parents' columns are not copied) are not checked.
+   keeps the name. Parts on an unknown table are reported by step 3 instead.
+
+   Steps 4 and 5 do not check column names against a table with `INHERITS`, because its
+   parents' columns are not copied.
 
 ### 8.3 Cases NOT Requiring Referential Equality
 

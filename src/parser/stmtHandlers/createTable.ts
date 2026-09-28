@@ -401,9 +401,16 @@ export function handleCreateTable(
     }
   }
 
-  // Pass 2 reports the targets that the DDL does not define
+  // Pass 2 reports the names that the DDL does not define
   for (const fk of foreignKeys) {
     acc.pendingFKs.push({ fk, tableKey })
+  }
+  if (tablePrimaryKey) {
+    for (const part of tablePrimaryKey.parts ?? []) {
+      if (part.column !== undefined) {
+        pendingIndexParts.push({ index: tablePrimaryKey, tableKey, column: part.column })
+      }
+    }
   }
   acc.pendingIndexParts.push(...pendingIndexParts)
 

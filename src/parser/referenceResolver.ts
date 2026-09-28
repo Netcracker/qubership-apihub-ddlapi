@@ -4,8 +4,8 @@
 //   1. LIKE expansion
 //   2. Column type upgrade (UnsupportedType → registered type)
 //   3. Index re-attachment (orphan → Table.indexes)
-//   4. ForeignKey target check (refTable + refColumns)
-//   5. Index part column check (part.column)
+//   4. ForeignKey check (columns, refTable, refColumns)
+//   5. Index part column check (part.column of indexes and the primary key)
 //
 // Steps 4 and 5 only report names that the DDL does not define: a ForeignKey and an
 // IndexPart hold names, which pass 1 has already set.
@@ -112,10 +112,31 @@ export function resolveReferences(
     acc.appendTableIndex(tableKey, index)
   }
 
-  // ── Step 4: ForeignKey target check ───────────────────────────────────────
+  // Steps 4 and 5 check column names only against a registered table without INHERITS. A
+  // table with INHERITS also has the columns of its parents, which the parser does not copy.
+  // An unregistered table has been reported already, by the step that dropped or missed it.
+  const hasCheckableColumns = (tableKey: string): boolean => {
+    const table = acc.tableRegistry.get(tableKey)
+    return table !== undefined && !table.attrs?.some(a => a.kind === PgAttrKind.Inherits)
+  }
+
+  // ── Step 4: ForeignKey check ──────────────────────────────────────────────
   // An unresolved key keeps its names — partial-realm guarantee.
 
-  for (const { fk } of acc.pendingFKs) {
+  for (const { fk, tableKey } of acc.pendingFKs) {
+    if (hasCheckableColumns(tableKey)) {
+      for (const colName of fk.columns ?? []) {
+        const colKey = `${tableKey}.${colName}`
+        if (!acc.columnRegistry.has(colKey)) {
+          onError({
+            kind: DdlErrorKind.UnresolvedReference,
+            target: colKey,
+            message: `Foreign key lists unknown column '${colName}' of table '${tableKey}'`,
+          })
+        }
+      }
+    }
+
     if (!fk.refTable) continue
     const refTableKey = `${fk.refTable.schema}.${fk.refTable.name}`
     if (!acc.tableRegistry.has(refTableKey)) {
@@ -126,6 +147,7 @@ export function resolveReferences(
       })
       continue
     }
+    if (!hasCheckableColumns(refTableKey)) continue
 
     for (const colName of fk.refColumns ?? []) {
       const colKey = `${refTableKey}.${colName}`
@@ -141,18 +163,19 @@ export function resolveReferences(
 
   // ── Step 5: Index part column check ───────────────────────────────────────
   // An unresolved part keeps its column name. An index on an unknown table is
-  // reported by step 3. A table with INHERITS also has the columns of its parents,
-  // which the parser does not copy, so its parts are not checked.
+  // reported by step 3.
 
   for (const { index, tableKey, column } of acc.pendingIndexParts) {
-    const table = acc.tableRegistry.get(tableKey)
-    if (!table || table.attrs?.some(a => a.kind === PgAttrKind.Inherits)) continue
+    if (!hasCheckableColumns(tableKey)) continue
     const columnKey = `${tableKey}.${column}`
     if (!acc.columnRegistry.has(columnKey)) {
+      const owner = acc.tableRegistry.get(tableKey)?.primaryKey === index
+        ? 'Primary key'
+        : `Index '${index.name ?? '(unnamed)'}'`
       onError({
         kind: DdlErrorKind.UnresolvedReference,
         target: columnKey,
-        message: `Index '${index.name ?? '(unnamed)'}' references unknown column '${column}' in table '${tableKey}'`,
+        message: `${owner} references unknown column '${column}' in table '${tableKey}'`,
       })
     }
   }
